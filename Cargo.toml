@@ -3,5 +3,18 @@ name = "constellation-rust"
 version = "0.1.0"
 authors = ["ZakariasLaws <zakarias.nl@gmail.com>"]
 edition = "2018"
+publish = false
+
+[badges]
+github = { repository = "https://github.com/JungleComputing/constellation-rust", branch = "master"}
+maintenance = { status = "actively-developed" }
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.release]
 
 [dependencies]
+mpi = "0.5"
