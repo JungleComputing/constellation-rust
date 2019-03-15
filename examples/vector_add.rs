@@ -3,15 +3,16 @@
 /// This package should not be an executable when finished, but a library.
 
 extern crate mpi;
+extern crate constellation_rust;
 
-use mpi::traits::*;
-use mpi::Count;
-use mpi::topology::SystemCommunicator;
-use mpi::datatype::PartitionMut;
 use std::env;
 use std::process::exit;
-
 use std::ops::{Add};
+
+use constellation_rust::single_threaded_constellation::SingleThreadConstellation;
+use constellation_rust::constellation::ConstellationTrait;
+use constellation_rust::steal_strategy;
+use constellation_rust::constellation_config;
 
 /// Structure holding a vector with any type of elements.
 #[derive(Debug, PartialEq)]
@@ -109,19 +110,43 @@ fn distributed_vector_add(vec1: Evec<i32>, vec2: Evec<i32>) -> Evec<i32>{
 }
 
 fn main() {
-    let world = //TODO number of nodes running
-    let master = //TODO elect one node to be 'master'
+    let const_config = constellation_config::ConstellationConfiguration::new(
+        steal_strategy::BIGGEST,
+        steal_strategy::BIGGEST,
+        steal_strategy::BIGGEST,
+    );
 
+    let mut constellation = SingleThreadConstellation::new(const_config);
+
+    constellation.activate();
+
+    let master = constellation.is_master().expect(
+        "Error when checking if current node is master"
+    );
+
+    // Retrieve user arguments
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        if root {
-            println!("Please provide an array length:\n\
-            Usage: mpirun ARGS vector_add.rs <array_length>\n---------------------\n");
+    if args.len() < 4 {
+        if master {
+            println!("Please provide an array length and number of nodes\n\
+            mpirun ARGS hello_world <array_length> <nmr_nodes>");
         }
         exit(1);
     }
 
-    let array_length = args[1].parse().unwrap();
+    array_length = args[1].parse().expect(
+        "Unable to parse array length: {}, \
+        please provide a number bigger than 0"
+    );
+
+    nodes = args[2].parse().expect(
+        "Unable to parse number of nodes: {}, \
+        please provide a number bigger than 0"
+    );
+
+    if constellation.is_master().unwrap() {
+        println!("Running Vector add with {} nodes", nodes);
+    }
 
     // Create two vectors and fill them with incrementing values from 0..<user_input>
     let mut vec1 = Evec::new();
@@ -132,7 +157,7 @@ fn main() {
         vec2.vec.push(x);
     }
 
-    if root {
+    if master {
 //        println!("Running distributed vector add on {} nodes.",
 //                 world.size());
         //TODO Print number of total nodes used
@@ -140,7 +165,7 @@ fn main() {
 
     let result = distributed_vector_add(vec1, vec2);
 
-    if root {
+    if master {
         let length = if array_length < 30 {array_length} else {30};
         println!("The first 30 elements in the resulting array are:\n{:?}", &result.vec[0..length as usize]);
     }

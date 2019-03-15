@@ -1,17 +1,34 @@
+use mpi::environment::Universe;
+use mpi::topology::Communicator;
+
+#[derive(Debug, Clone)]
 pub struct ConstellationIdentifier {
-    identifier: String
+    constellation_id: String,
+    node_id: String,
 }
 
 impl ConstellationIdentifier {
-    pub fn get_id(self) -> String {
-        self.identifier
+    pub fn new(universe: &Universe) -> ConstellationIdentifier {
+
+        let world = universe.world();
+        let rank = world.rank();
+
+        ConstellationIdentifier {
+            constellation_id: "asdf".to_string(),
+            node_id: "asdf".to_string(),
+        }
     }
 
-    pub fn new() -> ConstellationIdentifier {
+    pub fn new_empty() -> ConstellationIdentifier {
         ConstellationIdentifier {
-            // TODO This id should not be static, but be generated in a good
-            // TODO unique way
-            identifier: "MY_ID_1234".to_string()
+            constellation_id: "".to_string(),
+            node_id: "".to_string(),
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        String::from(
+            format!("CID:{}:{}", self.constellation_id, self.node_id)
+        )
     }
 }

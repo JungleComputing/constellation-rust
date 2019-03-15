@@ -1,3 +1,5 @@
+extern crate mpi;
+
 pub mod single_threaded_constellation;
 pub mod error;
 pub mod work_queue;

@@ -1,22 +1,25 @@
 pub trait ActivityIdentifier {
-    fn get_id(self) -> String;
+    fn to_string(&self) -> String;
 }
 
-struct ActivityIdentifierImpl {
-    id: String,
+pub struct ActivityIdentifierImpl {
+    constellation_id: String,
+    node_id: String,
+    activity_id: String,
 }
 
 impl ActivityIdentifier for ActivityIdentifierImpl {
-    fn get_id(self) -> String {
-        self.id
+    fn to_string(&self) -> String {
+        format!("{}:{}:{}", self.constellation_id, self.node_id, self.activity_id)
     }
 }
 
 impl ActivityIdentifierImpl {
     fn new() -> ActivityIdentifierImpl {
         ActivityIdentifierImpl {
-            // TODO This id needs to be unique
-            id: "activity-2".to_string()
+            constellation_id: "CID".to_string(),
+            node_id: "NID".to_string(),
+            activity_id: "AID".to_string(),
         }
     }
 }
