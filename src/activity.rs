@@ -12,7 +12,7 @@ struct ActivityWrapper<'a> {
 }
 
 impl<'a> ActivityWrapper<'a> {
-    fn identifier(self) -> &'a ActivityIdentifierImpl{
+    fn identifier(self) -> &'a ActivityIdentifierImpl {
         self.id
     }
 }

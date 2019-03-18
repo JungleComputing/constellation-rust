@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-pub struct WorkQueue<T>{
+pub struct WorkQueue<T> {
     //TODO Implement WorkQueue with RefMut
     queue: VecDeque<T>,
 }
@@ -21,8 +21,7 @@ impl<T> WorkQueue<T> {
 
     pub fn new() -> WorkQueue<T> {
         WorkQueue {
-            queue: VecDeque::new()
+            queue: VecDeque::new(),
         }
     }
 }
-

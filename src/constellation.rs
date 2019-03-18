@@ -1,10 +1,10 @@
-use super::implementation::error::ConstellationError;
-use super::constellation_identifier::ConstellationIdentifier;
-use super::event::Event;
 use super::activity::ActivityTrait;
 use super::constellation_config::ConstellationConfiguration;
+use super::constellation_identifier::ConstellationIdentifier;
 use super::constellation_properties::ConstellationProperties;
 use super::context::Context;
+use super::event::Event;
+use super::implementation::error::ConstellationError;
 
 /// Main trait for Constellation, use for setting up a Constellation instance,
 /// specifying properties and configurations.
@@ -20,7 +20,13 @@ pub trait ConstellationTrait {
     /// error information.
     fn activate(&mut self) -> Result<bool, ConstellationError>;
 
-    fn submit(&self, activity: &ActivityTrait, context: Context, can_be_stolen: bool, expects_events: bool);
+    fn submit(
+        &self,
+        activity: &ActivityTrait,
+        context: Context,
+        can_be_stolen: bool,
+        expects_events: bool,
+    );
 
     /// Send an event
     ///
@@ -52,5 +58,4 @@ pub trait ConstellationTrait {
     fn nodes(&self) -> i32;
 
     fn generate_identifier(&self) -> ConstellationIdentifier;
-
 }

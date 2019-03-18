@@ -1,11 +1,9 @@
 pub struct Context {
-    label: String
+    pub label: String,
 }
 
 impl Context {
-    fn new(label:String) -> Context {
-        Context {
-            label
-        }
+    fn new(label: String) -> Context {
+        Context { label }
     }
 }

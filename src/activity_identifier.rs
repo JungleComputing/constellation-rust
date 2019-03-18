@@ -10,7 +10,10 @@ pub struct ActivityIdentifierImpl {
 
 impl ActivityIdentifier for ActivityIdentifierImpl {
     fn to_string(&self) -> String {
-        format!("{}:{}:{}", self.constellation_id, self.node_id, self.activity_id)
+        format!(
+            "{}:{}:{}",
+            self.constellation_id, self.node_id, self.activity_id
+        )
     }
 }
 
