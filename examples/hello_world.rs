@@ -12,6 +12,8 @@ use constellation_rust::{activity, activity::ActivityTrait};
 use std::env;
 use std::process::exit;
 
+use constellation_rust::SingleEventCollector;
+
 const LABEL: &str = "Hello World";
 
 struct HelloWorldActivity {}
@@ -21,37 +23,34 @@ impl ActivityTrait for HelloWorldActivity {
         // no cleanup necessary
     }
 
-    fn initialize(&self, constellation: &ConstellationTrait) {
+    fn initialize(&self, constellation: &ConstellationTrait) -> usize {
         // Don't process anything, just suspend for later processing
-        activity::SUSPEND;
+        return activity::FINISH;
     }
 
-    fn process(&self, constellation: &ConstellationTrait, event: Event) {
-        // Print hello world upon execution
+    fn process(&self, constellation: &ConstellationTrait, event: Event) -> usize {
+        // No process necessary
         println!("{}", event.get_message());
-
-        activity::FINISH;
+        return activity::FINISH;
     }
 }
 
-fn run(constellation: SingleThreadConstellation) {
+fn run(constellation: &mut SingleThreadConstellation) {
     let master = constellation
         .is_master()
         .expect("Error when checking if current node is master");
 
     if master {
-        let activity = HelloWorldActivity {};
+        let activity = Box::from(HelloWorldActivity {});
         let context = Context {
             label: LABEL.to_string(),
         };
 
-        //        let sec: SingleEventCollector = // Wait until hello_world has been printed
-        //
-        //        println!("Running Vector add with {} nodes", constellation.nodes());
-        //
-        //        constellation.submit_event(sec); //TODO IS THIS THE RIGHT WAY TO GO??
-        //
-        //        constellation.submit(activity, context, true, true);
+        // Wait for 1 event and print it
+        let sec = SingleEventCollector::new();
+        constellation.submit(sec, &context, false, true);
+
+        //constellation.submit(activity, context, true, true);
     }
 }
 
@@ -77,5 +76,5 @@ fn main() {
 
     constellation.activate();
 
-    run(constellation);
+    run(&mut constellation);
 }

@@ -8,5 +8,9 @@ pub mod context;
 pub mod event;
 pub mod implementation;
 pub mod steal_strategy;
+pub mod util;
 
 pub use implementation::single_threaded_constellation;
+
+// Utils
+pub use util::activities::single_event_collector::SingleEventCollector;

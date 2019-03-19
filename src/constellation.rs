@@ -1,14 +1,13 @@
 use super::activity::ActivityTrait;
-use super::constellation_config::ConstellationConfiguration;
 use super::constellation_identifier::ConstellationIdentifier;
-use super::constellation_properties::ConstellationProperties;
 use super::context::Context;
 use super::event::Event;
 use super::implementation::error::ConstellationError;
+use std::sync::{Mutex, Arc};
 
 /// Main trait for Constellation, use for setting up a Constellation instance,
 /// specifying properties and configurations.
-pub trait ConstellationTrait {
+pub trait ConstellationTrait: Sync + Send {
     /// Activate Constellation instance.
     ///
     /// When created, the Constellation instance is inactive in order for the
@@ -21,9 +20,9 @@ pub trait ConstellationTrait {
     fn activate(&mut self) -> Result<bool, ConstellationError>;
 
     fn submit(
-        &self,
-        activity: &ActivityTrait,
-        context: Context,
+        &mut self,
+        activity: Arc<Mutex<dyn ActivityTrait>>,
+        context: &Context,
         can_be_stolen: bool,
         expects_events: bool,
     );

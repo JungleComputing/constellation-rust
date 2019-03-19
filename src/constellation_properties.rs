@@ -1,5 +1,3 @@
-use super::steal_strategy;
-
 pub struct ConstellationProperties {}
 
 impl ConstellationProperties {

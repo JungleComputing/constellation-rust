@@ -18,3 +18,4 @@ overflow-checks = true
 
 [dependencies]
 mpi = "0.5"
+crossbeam = "0.7.1"

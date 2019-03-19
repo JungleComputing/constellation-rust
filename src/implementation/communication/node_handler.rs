@@ -3,17 +3,20 @@ extern crate mpi;
 use mpi::collective::CommunicatorCollectives;
 use mpi::datatype::PartitionMut;
 use mpi::environment::Universe;
-use mpi::topology::{Color, Communicator, Rank, UserGroup};
+use mpi::topology::{Communicator, Rank};
 use mpi::Count;
 use std::collections::HashMap;
-use std::fmt;
 
-use super::super::super::constellation::ConstellationTrait;
 
+/// Store node information
+///
+/// * `node_name` - The processor name, can be received with
+/// mpi::environment::processor_name() from one of the processes running on the node
+/// * `node_id` - An unique identifier for this node
 #[derive(Debug, Clone)]
 pub struct NodeHandler {
-    node_name: String,
-    node_id: usize,
+    pub node_name: String,
+    pub node_id: usize,
 }
 
 /// Store in the provided HashMap which process runs on which node, data
@@ -22,7 +25,8 @@ pub struct NodeHandler {
 /// This method MUST be called from each MPI process.
 ///
 /// # Arguments
-/// * `&mut HashMap` - The HashMap to add node information to to
+/// * `&mut HashMap` - The HashMap to add node information to to, will be
+/// updated in place
 /// * `&Universe` - The Universe object from MPI, upon which MPI has already
 ///  been initialized
 pub fn create_groups(groups: &mut HashMap<Rank, NodeHandler>, universe: &Universe) {
