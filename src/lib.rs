@@ -1,3 +1,5 @@
+#[macro_use] extern crate mopa;
+
 pub mod activity;
 pub mod activity_identifier;
 pub mod constellation;
@@ -9,6 +11,7 @@ pub mod event;
 pub mod implementation;
 pub mod steal_strategy;
 pub mod util;
+pub mod message;
 
 pub use implementation::single_threaded_constellation;
 

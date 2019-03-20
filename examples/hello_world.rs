@@ -13,24 +13,49 @@ use std::env;
 use std::process::exit;
 
 use constellation_rust::SingleEventCollector;
+use constellation_rust::activity_identifier::ActivityIdentifier;
+use std::sync::Mutex;
+use std::sync::Arc;
+use constellation_rust::message::MessageTrait;
 
 const LABEL: &str = "Hello World";
 
-struct HelloWorldActivity {}
+struct HelloWorldActivity {
+    target: ActivityIdentifier,
+}
+
+struct Message {
+    data: String,
+}
+
+impl MessageTrait for Message {
+    fn to_string(&self) -> &String {
+        &self.data
+    }
+}
 
 impl ActivityTrait for HelloWorldActivity {
-    fn cleanup(&self, constellation: &ConstellationTrait) {
+    fn cleanup(&mut self, constellation: &ConstellationTrait) {
         // no cleanup necessary
     }
 
-    fn initialize(&self, constellation: &ConstellationTrait) -> usize {
-        // Don't process anything, just suspend for later processing
+    fn initialize(&mut self, constellation: &ConstellationTrait) -> usize {
+        // Create an event and send it to process with id self.target
+
+        let msg = Message {
+            data: LABEL.to_string(),
+        };
+
+        let event = Event::new(Box::from(msg));
+
+        // Send the event containing the message string
+        constellation.send(event);
+
         return activity::FINISH;
     }
 
-    fn process(&self, constellation: &ConstellationTrait, event: Event) -> usize {
+    fn process(&mut self, constellation: &ConstellationTrait, event: Event) -> usize {
         // No process necessary
-        println!("{}", event.get_message());
         return activity::FINISH;
     }
 }
@@ -41,16 +66,25 @@ fn run(constellation: &mut SingleThreadConstellation) {
         .expect("Error when checking if current node is master");
 
     if master {
-        let activity = Box::from(HelloWorldActivity {});
         let context = Context {
             label: LABEL.to_string(),
         };
 
-        // Wait for 1 event and print it
         let sec = SingleEventCollector::new();
-        constellation.submit(sec, &context, false, true);
+        let sec_aid = constellation.submit(
+            &sec, &context, false, true);
 
-        //constellation.submit(activity, context, true, true);
+        let hello_activity: Arc<Mutex<ActivityTrait>> = Arc::new(Mutex::new(HelloWorldActivity {
+            target: sec_aid,
+        }));
+
+        constellation.submit(&hello_activity, &context, true, false);
+
+        println!("Both events submitted to Constellation");
+
+        sec.lock().expect(
+            "Could not grab lock on SingleEventCollector"
+        );
     }
 }
 

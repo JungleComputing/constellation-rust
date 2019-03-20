@@ -4,6 +4,7 @@ use super::context::Context;
 use super::event::Event;
 use super::implementation::error::ConstellationError;
 use std::sync::{Mutex, Arc};
+use crate::activity_identifier::ActivityIdentifier;
 
 /// Main trait for Constellation, use for setting up a Constellation instance,
 /// specifying properties and configurations.
@@ -21,11 +22,11 @@ pub trait ConstellationTrait: Sync + Send {
 
     fn submit(
         &mut self,
-        activity: Arc<Mutex<dyn ActivityTrait>>,
+        activity: &Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
         can_be_stolen: bool,
         expects_events: bool,
-    );
+    ) -> ActivityIdentifier;
 
     /// Send an event
     ///
@@ -58,3 +59,5 @@ pub trait ConstellationTrait: Sync + Send {
 
     fn generate_identifier(&self) -> ConstellationIdentifier;
 }
+
+//mopafy!(ConstellationTrait);

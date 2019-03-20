@@ -1,13 +1,21 @@
+use super::message::MessageTrait;
+
 pub struct Event {
-    message: String,
+    message: Box<dyn MessageTrait>,
 }
 
 impl Event {
-    fn to_string(&self) -> String {
-        String::from(format!("{}", self.message))
+    pub fn new(message: Box<dyn MessageTrait>) -> Event {
+        Event {
+            message,
+        }
     }
 
-    pub fn get_message(&self) -> String {
-        self.to_string()
+    fn to_string(&self) -> &String {
+        &self.message.to_string()
+    }
+
+    pub fn get_message(&self) -> &Box<dyn MessageTrait> {
+        &self.message
     }
 }

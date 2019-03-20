@@ -11,7 +11,6 @@ use super::super::event::Event;
 use super::super::implementation::error::ConstellationError;
 use super::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
 use super::constellation_identifier::ConstellationIdentifier;
-use super::work_queue::WorkQueue;
 
 use mpi::environment::Universe;
 use mpi::topology::Communicator;
@@ -25,6 +24,7 @@ use crossbeam::deque::Steal;
 use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
 use std::time;
+use crate::activity_identifier::ActivityIdentifier;
 
 /// A single threaded Constellation instance containing.
 ///
@@ -35,9 +35,8 @@ use std::time;
 /// instances.
 pub struct SingleThreadConstellation<'a> {
     identifier: ConstellationIdentifier,
-    injector_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    fresh: WorkQueue<Box<dyn ActivityTrait>>,
-    stolen: WorkQueue<Box<dyn ActivityTrait>>,
+    work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+    event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
     active: bool,
     universe: Universe,
     parent: Option<&'a constellation::ConstellationTrait>,
@@ -49,14 +48,21 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
         let (sender, receiver): (Sender<i32>, Receiver<i32>) = unbounded();
         let (sender2, receiver2) = (sender.clone(), receiver.clone());
 
-        let inner_injector_queue = self.injector_queue.clone();
+        let inner_work_queue = self.work_queue.clone();
+        let inner_event_queue = self.event_queue.clone();
 
         // Start executor thread, it will keep running untill shut down by
         // Constellation
         let join_handle = thread::spawn(move || {
             // Start checking periodically for work
-            let local_injector_queue = inner_injector_queue.lock().unwrap();
-            let executor = ExecutorThread::new(sender2, receiver2, local_injector_queue);
+            let local_work_queue = inner_work_queue.lock().unwrap();
+            let local_event_queue = inner_event_queue.lock().unwrap();
+
+            let executor = ExecutorThread::new(
+                sender2,
+                receiver2,
+                local_work_queue,
+                local_event_queue);
             executor.run();
         });
 
@@ -83,21 +89,29 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
     /// stolen or not.
     /// * `expects_events` - A boolean indicating whether this activity expects
     /// events or not.
+    ///
+    /// # Returns
+    /// * `ActivityIdentifier` - The generated Activity Identifier for
+    /// this Activity
     fn submit(
         &mut self,
-        activity: Arc<Mutex<dyn ActivityTrait>>,
+        activity: &Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
         can_be_stolen: bool,
         expects_events: bool,
-    ) {
+    ) -> ActivityIdentifier {
         let activity_wrapper =
             ActivityWrapper::new(&self.identifier, activity, context, can_be_stolen, expects_events);
 
+        let activity_id = activity_wrapper.identifier();
+
         // Insert ActivityWrapper in injector_queue
-        self.injector_queue
+        self.work_queue
             .lock()
             .expect("Could not get lock on injector_queue, failed to push activity")
             .push(activity_wrapper);
+
+        activity_id
     }
 
     fn send(&self, _e: Event) {
@@ -137,7 +151,10 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
         }
 
         // Call parent method ConstellationIdentifier
-        self.parent.unwrap().generate_identifier()
+        self.parent.expect(
+            "No parent available"
+        ).generate_identifier()
+
     }
 }
 
@@ -155,9 +172,8 @@ impl<'a> SingleThreadConstellation<'a> {
         let const_id = ConstellationIdentifier::new_empty();
         let mut new_const = SingleThreadConstellation {
             identifier: const_id,
-            injector_queue: Arc::new(Mutex::new(deque::Injector::new())),
-            fresh: WorkQueue::new(),
-            stolen: WorkQueue::new(),
+            work_queue: Arc::new(Mutex::new(deque::Injector::new())),
+            event_queue: Arc::new(Mutex::new(deque::Injector::new())),
             active: false,
             universe: mpi::initialize().unwrap(),
             parent: None,
@@ -210,29 +226,35 @@ impl ThreadHandler {
 ///
 /// * `sender` - Sender channel to send data to the Constellation instance.
 /// * `receiver` - Receiver channel to receive data from the Constellation instance.
-/// * `injector_queue` - Shared queue with Constellation instance, used to grab
+/// * `work_queue` - Shared queue with Constellation instance, used to grab
 /// work when available.
+/// * `event_queue` - Shared queue for events containing data, executor will
+/// check this queue whenever if is expecting events
 struct ExecutorThread<'a> {
     sender: Sender<i32>,
     receiver: Receiver<i32>,
-    injector_queue: MutexGuard<'a, deque::Injector<Box<dyn ActivityWrapperTrait>>>,
+    work_queue: MutexGuard<'a, deque::Injector<Box<dyn ActivityWrapperTrait>>>,
+    event_queue: MutexGuard<'a, deque::Injector<Box<Event>>>,
 }
 
 impl<'a> ExecutorThread<'a> {
     fn new(
         sender: Sender<i32>,
         receiver: Receiver<i32>,
-        injector_queue: MutexGuard<deque::Injector<Box<dyn ActivityWrapperTrait>>>,
-    ) -> ExecutorThread {
+        work_queue: MutexGuard<'a, deque::Injector<Box<dyn ActivityWrapperTrait>>>,
+        event_queue: MutexGuard<'a, deque::Injector<Box<Event>>>,
+    ) -> ExecutorThread<'a> {
         ExecutorThread {
             sender,
             receiver,
-            injector_queue,
+            work_queue,
+            event_queue,
         }
     }
 
     fn check_for_work(&self) -> Option<Box<dyn ActivityWrapperTrait>> {
-        if let Steal::Success(activity) = self.injector_queue.steal() {
+        // Steal work from shared activity queue, if available
+        if let Steal::Success(activity) = self.work_queue.steal() {
             return Some(activity as Box<dyn ActivityWrapperTrait>);
         }
 
@@ -244,15 +266,15 @@ impl<'a> ExecutorThread<'a> {
     }
 
     fn run(&self) {
-        for _ in 0..3 {
+        let two_seconds = time::Duration::from_secs(10);
+        thread::sleep(two_seconds);
+
+        for _ in 0..1 {
             let work = self.check_for_work();
             match work {
                 Some(x) => self.process_work(x),
                 None => (),
             }
-
-            let ten_seconds = time::Duration::from_secs(5);
-            thread::sleep(ten_seconds);
         }
     }
 }

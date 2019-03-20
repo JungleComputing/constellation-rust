@@ -25,10 +25,30 @@ impl ActivityWrapperTrait for ActivityWrapper {
     }
 }
 
+impl ActivityTrait for ActivityWrapper {
+    fn cleanup(&mut self, constellation: &ConstellationTrait) {
+        self.activity.lock().expect(
+            &format!("Could not acquire lock on activity with id {}", self.identifier())
+        ).cleanup(constellation);
+    }
+
+    fn initialize(&mut self, constellation: &ConstellationTrait) -> usize {
+        self.activity.lock().expect(
+            &format!("Could not acquire lock on activity with id {}", self.identifier())
+        ).initialize(constellation)
+    }
+
+    fn process(&mut self, constellation: &ConstellationTrait, event: Event) -> usize{
+        self.activity.lock().expect(
+            &format!("Could not acquire lock on activity with id {}", self.identifier())
+        ).process(constellation, event)
+    }
+}
+
 impl ActivityWrapper {
     pub fn new(
         const_id: &ConstellationIdentifier,
-        activity: Arc<Mutex<dyn ActivityTrait>>,
+        activity: &Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
         may_be_stolen: bool,
         expects_events: bool,
@@ -41,11 +61,5 @@ impl ActivityWrapper {
             expects_events,
             activity: activity.clone(), // Clone the reference
         })
-    }
-
-    pub fn process(&self, constellation: &ConstellationTrait, event: Event){
-        self.activity.lock().expect(
-            &format!("Could not acquire lock on activity with id {}", self.identifier())
-        ).process(constellation, event);
     }
 }
