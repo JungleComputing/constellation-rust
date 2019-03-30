@@ -1,4 +1,5 @@
 #[macro_use] extern crate mopa;
+extern crate objekt;
 
 pub mod activity;
 pub mod activity_identifier;

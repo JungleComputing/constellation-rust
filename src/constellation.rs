@@ -8,7 +8,7 @@ use crate::activity_identifier::ActivityIdentifier;
 
 /// Main trait for Constellation, use for setting up a Constellation instance,
 /// specifying properties and configurations.
-pub trait ConstellationTrait: Sync + Send {
+pub trait ConstellationTrait: Sync + Send + mopa::Any {
     /// Activate Constellation instance.
     ///
     /// When created, the Constellation instance is inactive in order for the
@@ -24,7 +24,7 @@ pub trait ConstellationTrait: Sync + Send {
         &mut self,
         activity: &Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
-        can_be_stolen: bool,
+        may_be_stolen: bool,
         expects_events: bool,
     ) -> ActivityIdentifier;
 
@@ -32,32 +32,32 @@ pub trait ConstellationTrait: Sync + Send {
     ///
     /// # Arguments
     /// * `Event` - the event to send
-    fn send(&self, e: Event);
+    fn send(&mut self, e: Event);
 
     /// Terminate Constellation instance.
     ///
     /// # Returns
     /// * `Result<bool, ConstellationError` - Result<..> containing possible
     ///  error information.
-    fn done(&self) -> Result<bool, ConstellationError>;
+    fn done(&mut self) -> Result<bool, ConstellationError>;
 
     /// Return the identifier for this Constellation instance
     ///
     /// # Returns
     /// * `ConstellationIdentifier` - An identifier for this specific
     /// Constellation instance
-    fn identifier(&self) -> ConstellationIdentifier;
+    fn identifier(&mut self) -> ConstellationIdentifier;
 
     /// Check if the calling node is master.
     ///
     /// # Returns
     /// * `Result<bool, ConstellationError` - Result<..>, which upon a
     /// successful call contains *true* if node is master and *false* if not.
-    fn is_master(&self) -> Result<bool, ConstellationError>;
+    fn is_master(&mut self) -> Result<bool, ConstellationError>;
 
-    fn nodes(&self) -> i32;
+    fn nodes(&mut self) -> i32;
 
-    fn generate_identifier(&self) -> ConstellationIdentifier;
+    fn generate_identifier(&mut self) -> ConstellationIdentifier;
 }
 
-//mopafy!(ConstellationTrait);
+mopafy!(ConstellationTrait);

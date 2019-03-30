@@ -17,6 +17,8 @@ use constellation_rust::activity_identifier::ActivityIdentifier;
 use std::sync::Mutex;
 use std::sync::Arc;
 use constellation_rust::message::MessageTrait;
+use std::time;
+use std::thread;
 
 const LABEL: &str = "Hello World";
 
@@ -35,11 +37,11 @@ impl MessageTrait for Message {
 }
 
 impl ActivityTrait for HelloWorldActivity {
-    fn cleanup(&mut self, constellation: &ConstellationTrait) {
+    fn cleanup(&mut self,  constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
         // no cleanup necessary
     }
 
-    fn initialize(&mut self, constellation: &ConstellationTrait) -> usize {
+    fn initialize(&mut self, constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>) -> usize {
         // Create an event and send it to process with id self.target
 
         let msg = Message {
@@ -49,12 +51,14 @@ impl ActivityTrait for HelloWorldActivity {
         let event = Event::new(Box::from(msg));
 
         // Send the event containing the message string
-        constellation.send(event);
+        constellation.lock().expect(
+            "Could not get lock on Constellation instance"
+        ).send(event);
 
         return activity::FINISH;
     }
 
-    fn process(&mut self, constellation: &ConstellationTrait, event: Event) -> usize {
+    fn process(&mut self, constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>, event: Event) -> usize {
         // No process necessary
         return activity::FINISH;
     }
@@ -81,10 +85,8 @@ fn run(constellation: &mut SingleThreadConstellation) {
         constellation.submit(&hello_activity, &context, true, false);
 
         println!("Both events submitted to Constellation");
-
-        sec.lock().expect(
-            "Could not grab lock on SingleEventCollector"
-        );
+        let time = time::Duration::from_secs(3);
+        thread::sleep(time);
     }
 }
 

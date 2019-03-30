@@ -3,7 +3,6 @@ extern crate crossbeam;
 extern crate mpi;
 
 use super::super::activity::ActivityTrait;
-use super::super::constellation;
 use super::super::constellation::ConstellationTrait;
 use super::super::constellation_config::ConstellationConfiguration;
 use super::super::context::Context;
@@ -11,6 +10,7 @@ use super::super::event::Event;
 use super::super::implementation::error::ConstellationError;
 use super::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
 use super::constellation_identifier::ConstellationIdentifier;
+use super::inner_constellation::InnerConstellation;
 
 use mpi::environment::Universe;
 use mpi::topology::Communicator;
@@ -25,52 +25,66 @@ use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
 use std::time;
 use crate::activity_identifier::ActivityIdentifier;
+use std::any::Any;
 
-/// A single threaded Constellation instance containing.
-///
-/// * `identifier` - ConstellationIdentifier used to identify this
-/// constellation instance.
-/// * `fresh` - Work_queue containing fresh work that anyone can steal.
-/// * `stolen` - Work_queue containing stolen work from other Constellation
-/// instances.
-pub struct SingleThreadConstellation<'a> {
-    identifier: ConstellationIdentifier,
-    work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
-    active: bool,
-    universe: Universe,
-    parent: Option<&'a constellation::ConstellationTrait>,
+/// A single threaded Constellation initializer, it creates an executor thread
+/// and a InnerConstellation object. The inner_constellation contains all
+/// logic related to Constellation (such as submitting activities etc).
+/// The only purpose of this wrapper is to initialize both threads and share
+/// the references between them.
+pub struct SingleThreadConstellation {
     executor: Option<ThreadHandler>,
+    inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>
 }
 
-impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
+impl ConstellationTrait for SingleThreadConstellation {
+
+    /// Activate the Constellation instance
+    ///
+    /// This will setup the ExecutorThread and the InnerConstellation object,
+    /// and share necessary references between them.
+    ///
+    /// # Returns
+    /// * `Result<bool, ConstellationError>` - A Result type containing a
+    /// boolean which will ALWAYS have the value true.
+    /// Upon failure a ConstellationError will be returned
     fn activate(&mut self) -> Result<bool, ConstellationError> {
         let (sender, receiver): (Sender<i32>, Receiver<i32>) = unbounded();
         let (sender2, receiver2) = (sender.clone(), receiver.clone());
 
-        let inner_work_queue = self.work_queue.clone();
-        let inner_event_queue = self.event_queue.clone();
+        let mut inner_work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
+        let mut inner_event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
+
+        if let Some(inner) = self.inner_constellation.lock().unwrap().downcast_ref::<InnerConstellation>(){
+            inner_work_queue = inner.work_queue.clone();
+            inner_event_queue = inner.event_queue.clone();
+        } else {
+            panic!("Something went wrong when cloning the work and event queue")
+        };
+
+        let inner_constellation =
+            self.inner_constellation.clone();
 
         // Start executor thread, it will keep running untill shut down by
         // Constellation
         let join_handle = thread::spawn(move || {
             // Start checking periodically for work
-            let local_work_queue = inner_work_queue.lock().unwrap();
-            let local_event_queue = inner_event_queue.lock().unwrap();
+            let local_work_queue = inner_work_queue;
+            let local_event_queue = inner_event_queue;
 
-            let executor = ExecutorThread::new(
+            let mut executor = ExecutorThread::new(
                 sender2,
                 receiver2,
                 local_work_queue,
-                local_event_queue);
+                local_event_queue,
+                inner_constellation,
+                );
             executor.run();
         });
 
         self.executor = Some(ThreadHandler::new(join_handle, sender, receiver));
 
-        self.active = true;
-
-        return Result::Ok(true);
+        return Ok(true);
     }
 
     /// Submit an activity to Constellation. Internally it will wrap the new
@@ -85,7 +99,7 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
     /// The activity must be inside an Arc<Mutex<..>>, in order to work with
     /// thread safety.
     /// * `context` - A reference to the context created for this activity
-    /// * `can_be_stolen` - A boolean indicating whether this activity can be
+    /// * `may_be_stolen` - A boolean indicating whether this activity can be
     /// stolen or not.
     /// * `expects_events` - A boolean indicating whether this activity expects
     /// events or not.
@@ -97,45 +111,58 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
         &mut self,
         activity: &Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
-        can_be_stolen: bool,
+        may_be_stolen: bool,
         expects_events: bool,
     ) -> ActivityIdentifier {
-        let activity_wrapper =
-            ActivityWrapper::new(&self.identifier, activity, context, can_be_stolen, expects_events);
-
-        let activity_id = activity_wrapper.identifier();
-
-        // Insert ActivityWrapper in injector_queue
-        self.work_queue
-            .lock()
-            .expect("Could not get lock on injector_queue, failed to push activity")
-            .push(activity_wrapper);
-
-        activity_id
+        self.inner_constellation.lock().unwrap().submit(activity,
+                                                        context,
+                                                        may_be_stolen,
+                                                        expects_events)
     }
 
-    fn send(&self, _e: Event) {
-        unimplemented!()
+    /// Perform a send operation with the event specified as argument
+    ///
+    /// # Arguments
+    /// * `e` - Event to send
+    fn send(&mut self, e: Event) {
+        self.inner_constellation.lock().unwrap().send(e);
     }
 
-    fn done(&self) -> Result<bool, ConstellationError> {
-        unimplemented!()
+    /// Signal Constellation that it is done, perform a graceful shutdown
+    ///
+    /// # Returns
+    /// * `Result<bool, ConstellationError>` - Result type containing true if
+    /// it could succesfully shutdown, false otherwise.
+    /// Upon error a ConstellationError is returned
+    fn done(&mut self) -> Result<bool, ConstellationError> {
+        self.inner_constellation.lock().unwrap().done()
     }
 
-    fn identifier(&self) -> ConstellationIdentifier {
-        self.identifier.clone()
+    /// Retrieve an identifier for this Constellation instance
+    ///
+    /// # Returns
+    /// * `ConstellationIdentifier` - Identifier for this Constellation instance
+    fn identifier(&mut self) -> ConstellationIdentifier {
+        self.inner_constellation.lock().unwrap().identifier()
     }
 
-    fn is_master(&self) -> Result<bool, ConstellationError> {
-        if self.rank() == 0 {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+    /// Retrieve if THIS process is the master, used for leader election.
+    /// Only ONE process will return true, the rest will return false.
+    ///
+    /// # Returns
+    /// * `Result<bool, ConstellationError` - Result type with the value true if
+    /// this process is the leader, false otherwise.
+    /// Will return ConstellationError if something went wrong.
+    fn is_master(&mut self) -> Result<bool, ConstellationError> {
+        self.inner_constellation.lock().unwrap().is_master()
     }
 
-    fn nodes(&self) -> i32 {
-        self.world().size()
+    /// Return the total number of nodes in the Constellation instance
+    ///
+    /// # Returns
+    /// * `i32` - Number of nodes
+    fn nodes(&mut self) -> i32 {
+        self.inner_constellation.lock().unwrap().nodes()
     }
 
     /// Generate a unique ConstellationIdentifier by recursively calling this
@@ -143,22 +170,12 @@ impl<'a> constellation::ConstellationTrait for SingleThreadConstellation<'a> {
     ///
     /// # Returns
     /// * `ConstellationIdentifier` - A unique ConstellationIdentifier
-    fn generate_identifier(&self) -> ConstellationIdentifier {
-        // Check if there is a multithreaded Constellation running
-        if self.parent.is_none() {
-            // Has no parent, this is the top-level instance of Constellation
-            return ConstellationIdentifier::new(&self.universe);
-        }
-
-        // Call parent method ConstellationIdentifier
-        self.parent.expect(
-            "No parent available"
-        ).generate_identifier()
-
+    fn generate_identifier(&mut self) -> ConstellationIdentifier {
+        self.inner_constellation.lock().unwrap().generate_identifier()
     }
 }
 
-impl<'a> SingleThreadConstellation<'a> {
+impl SingleThreadConstellation {
     /// Create a new single threaded constellation instance, initializing
     /// ConstellationID, NodeMapping and relevant queues
     ///
@@ -168,29 +185,14 @@ impl<'a> SingleThreadConstellation<'a> {
     /// # Returns
     /// * `SingleThreadedConstellation` - New single threaded Constellation
     /// instance
-    pub fn new(_config: Box<ConstellationConfiguration>) -> SingleThreadConstellation<'a> {
-        let const_id = ConstellationIdentifier::new_empty();
-        let mut new_const = SingleThreadConstellation {
-            identifier: const_id,
-            work_queue: Arc::new(Mutex::new(deque::Injector::new())),
-            event_queue: Arc::new(Mutex::new(deque::Injector::new())),
-            active: false,
-            universe: mpi::initialize().unwrap(),
-            parent: None,
+    pub fn new(_config: Box<ConstellationConfiguration>) -> SingleThreadConstellation {
+        SingleThreadConstellation {
             executor: None,
-        };
-
-        new_const.identifier = new_const.generate_identifier();
-
-        new_const
-    }
-
-    fn rank(&self) -> i32 {
-        self.world().rank()
-    }
-
-    fn world(&self) -> SystemCommunicator {
-        self.universe.world()
+            inner_constellation: Arc::new(Mutex::new(Box::new(
+                InnerConstellation::new(Arc::new(Mutex::new(deque::Injector::new())),
+                                        Arc::new(Mutex::new(deque::Injector::new()))
+                )))),
+        }
     }
 }
 
@@ -222,7 +224,7 @@ impl ThreadHandler {
 
 /// Executor thread, runs in a separate thread and is in charge of executing
 /// activities. It will periodically check for work in the Constellation
-/// instance.
+/// instance using it's shared queues.
 ///
 /// * `sender` - Sender channel to send data to the Constellation instance.
 /// * `receiver` - Receiver channel to receive data from the Constellation instance.
@@ -230,47 +232,79 @@ impl ThreadHandler {
 /// work when available.
 /// * `event_queue` - Shared queue for events containing data, executor will
 /// check this queue whenever if is expecting events
-struct ExecutorThread<'a> {
+/// * `constellation` - A reference to the InnerConstellation instance, required
+/// by the functions in the activities executed
+struct ExecutorThread {
     sender: Sender<i32>,
     receiver: Receiver<i32>,
-    work_queue: MutexGuard<'a, deque::Injector<Box<dyn ActivityWrapperTrait>>>,
-    event_queue: MutexGuard<'a, deque::Injector<Box<Event>>>,
+    work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+    event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
+    local: deque::Worker<Box<dyn ActivityWrapperTrait>>,
+    constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
 }
 
-impl<'a> ExecutorThread<'a> {
+impl ExecutorThread {
+    /// Create a new ExecutorThread
+    ///
+    /// * `ExecutorThread` - New executor thread
     fn new(
         sender: Sender<i32>,
         receiver: Receiver<i32>,
-        work_queue: MutexGuard<'a, deque::Injector<Box<dyn ActivityWrapperTrait>>>,
-        event_queue: MutexGuard<'a, deque::Injector<Box<Event>>>,
-    ) -> ExecutorThread<'a> {
+        work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+        event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
+        constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+    ) -> ExecutorThread{
         ExecutorThread {
             sender,
             receiver,
             work_queue,
             event_queue,
+            local: deque::Worker::new_fifo(),
+            constellation,
         }
     }
 
-    fn check_for_work(&self) -> Option<Box<dyn ActivityWrapperTrait>> {
+    /// Tries to steal a batch of work from the shared work_queue. If there is
+    /// work, it will return one of the stolen jobs, which is to be
+    /// executed immediately.
+    ///
+    /// # Returns
+    /// * `Option<Box<dyn ActivityWrapperTrait>>` - If there is work, it will
+    /// pop one job from the local queue and return that wrapped in Some(..)
+    fn check_for_work(&mut self) -> Option<Box<dyn ActivityWrapperTrait>> {
         // Steal work from shared activity queue, if available
-        if let Steal::Success(activity) = self.work_queue.steal() {
-            return Some(activity as Box<dyn ActivityWrapperTrait>);
+        if let Steal::Success(activity) = self.work_queue.lock().unwrap()
+            .steal_batch_and_pop(&self.local) {
+            return Some(activity);
         }
 
         None
     }
 
-    fn process_work(&self, activity: Box<dyn ActivityWrapperTrait>) {
-        println!("From inside thread: {}", activity.identifier().to_string());
+    /// Process a stolen activity, this is the main function of executing a
+    /// activity.
+    ///
+    /// ADD MORE WHEN FURTHER
+    ///
+    /// # Arguments
+    /// * `activity` - A boxed activity to perform work on.
+    fn process_work(&mut self, mut activity: Box<dyn ActivityWrapperTrait>) {
+        self.initialize(activity);
     }
 
-    fn run(&self) {
-        let two_seconds = time::Duration::from_secs(10);
-        thread::sleep(two_seconds);
+    /// Call initialize on the activity
+    fn initialize(&mut self, mut activity: Box<dyn ActivityWrapperTrait>){
+        activity.initialize(self.constellation.clone());
+    }
 
-        for _ in 0..1 {
-            let work = self.check_for_work();
+    /// This will startup the thread, periodically check for work forever or
+    /// if shut down from InnerConstellation/SingleThreadedConstellation.
+    fn run(&mut self) {
+        let time = time::Duration::from_secs(1);
+        thread::sleep(time);
+
+        for _ in 0..20 {
+            let mut work = self.check_for_work();
             match work {
                 Some(x) => self.process_work(x),
                 None => (),

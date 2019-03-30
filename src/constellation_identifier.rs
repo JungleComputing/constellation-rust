@@ -4,12 +4,14 @@ use mpi::topology::Communicator;
 use mpi::topology::Rank;
 use std::collections::HashMap;
 use std::fmt;
+use crate::activity_identifier::ActivityIdentifier;
 
 #[derive(Debug)]
 pub struct ConstellationIdentifier {
     pub constellation_id: i32,
     pub node_info: node_handler::NodeHandler,
     pub group: HashMap<Rank, node_handler::NodeHandler>, // All processes and their node information
+    activity_counter: u64,
 }
 
 impl ConstellationIdentifier {
@@ -26,6 +28,7 @@ impl ConstellationIdentifier {
                 node_id: 0
             },
             group: HashMap::new(),
+            activity_counter: 0,
         };
 
         // Create mpi groups to track processes on each node
@@ -44,7 +47,15 @@ impl ConstellationIdentifier {
                 node_id: 0
             },
             group: HashMap::new(),
+            activity_counter: 0,
         }
+    }
+
+    pub fn generate_activity_id(&mut self) -> u64 {
+        let ret = self.activity_counter;
+        self.activity_counter += 1;
+
+        ret
     }
 
     pub fn to_string(&self) -> String {
@@ -64,6 +75,7 @@ impl Clone for ConstellationIdentifier {
             constellation_id: self.constellation_id.clone(),
             node_info: self.node_info.clone(),
             group: HashMap::new(),
+            activity_counter: 0,
         }
     }
 }

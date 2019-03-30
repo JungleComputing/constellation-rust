@@ -9,16 +9,16 @@ pub struct SingleEventCollector {
 }
 
 impl ActivityTrait for SingleEventCollector {
-    fn cleanup(&mut self, _: &ConstellationTrait) {
+    fn cleanup(&mut self, _: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
         // no cleanup necessary
     }
 
-    fn initialize(&mut self, _: &ConstellationTrait) -> usize {
+    fn initialize(&mut self, _: Arc<Mutex<Box<dyn ConstellationTrait>>>) -> usize {
         // Don't process anything, just suspend for later processing
         return activity::SUSPEND;
     }
 
-    fn process(&mut self, _: &ConstellationTrait, event: Event) -> usize {
+    fn process(&mut self, _: Arc<Mutex<Box<dyn ConstellationTrait>>>, event: Event) -> usize {
         // TODO Notify wait_for_event that event has been received
         self.event = Some(event);
 

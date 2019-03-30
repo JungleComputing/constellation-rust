@@ -1,6 +1,8 @@
 use super::constellation_identifier::ConstellationIdentifier;
 use super::implementation::communication::node_handler::NodeHandler;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 pub trait ActivityIdentifierTrait {
     fn to_string(&self) -> String;
@@ -8,9 +10,9 @@ pub trait ActivityIdentifierTrait {
 
 #[derive(Debug, Clone)]
 pub struct ActivityIdentifier {
-    constellation_id: i32,
-    node_info: NodeHandler,
-    activity_id: String,
+    pub constellation_id: i32,
+    pub node_info: NodeHandler,
+    pub activity_id: u64,
 }
 
 impl ActivityIdentifierTrait for ActivityIdentifier {
@@ -29,14 +31,16 @@ impl fmt::Display for ActivityIdentifier {
 }
 
 impl ActivityIdentifier {
-    pub fn new(const_id: &ConstellationIdentifier) -> ActivityIdentifier {
+    pub fn new(const_id_arc: Arc<Mutex<ConstellationIdentifier>>) -> ActivityIdentifier {
+        let mut const_id = const_id_arc.lock().unwrap();
+
         ActivityIdentifier {
             constellation_id: const_id.constellation_id,
             node_info: NodeHandler{
                 node_name: const_id.node_info.node_name.clone(),
                 node_id: const_id.node_info.node_id
             },
-            activity_id: "999".to_string(),
+            activity_id: const_id.generate_activity_id(),
         }
     }
 }
