@@ -6,7 +6,7 @@ use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_config;
 use constellation_rust::context::Context;
 use constellation_rust::event::Event;
-use constellation_rust::single_threaded_constellation::SingleThreadConstellation;
+use constellation_rust::constellation_factory::{Mode, new_constellation};
 use constellation_rust::steal_strategy;
 use constellation_rust::{activity, activity::ActivityTrait};
 use std::env;
@@ -64,7 +64,7 @@ impl ActivityTrait for HelloWorldActivity {
     }
 }
 
-fn run(constellation: &mut SingleThreadConstellation) {
+fn run(mut constellation: Box<dyn ConstellationTrait>) {
     let master = constellation
         .is_master()
         .expect("Error when checking if current node is master");
@@ -108,9 +108,9 @@ fn main() {
         nmr_nodes,
     );
 
-    let mut constellation = SingleThreadConstellation::new(const_config);
+    let mut constellation = new_constellation(Mode::SingleThreaded, const_config);
 
     constellation.activate();
 
-    run(&mut constellation);
+    run(constellation);
 }

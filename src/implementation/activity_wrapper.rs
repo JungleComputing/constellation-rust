@@ -5,7 +5,6 @@ use std::sync::{Mutex, Arc};
 use crate::context::Context;
 use crate::constellation::ConstellationTrait;
 use crate::event::Event;
-use crate::implementation::error::ConstellationError;
 
 pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait {
     fn activity_identifier(&self) -> ActivityIdentifier;

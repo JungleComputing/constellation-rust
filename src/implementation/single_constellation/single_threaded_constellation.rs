@@ -2,30 +2,23 @@
 extern crate crossbeam;
 extern crate mpi;
 
-use super::super::activity::ActivityTrait;
-use super::super::constellation::ConstellationTrait;
-use super::super::constellation_config::ConstellationConfiguration;
-use super::super::context::Context;
-use super::super::event::Event;
-use super::super::implementation::error::ConstellationError;
-use super::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
-use super::constellation_identifier::ConstellationIdentifier;
-use super::inner_constellation::InnerConstellation;
-
-use mpi::environment::Universe;
-use mpi::topology::Communicator;
-use mpi::topology::SystemCommunicator;
+use std::sync::{Mutex, Arc};
 use std::thread;
-use std::thread::JoinHandle;
 
-use crossbeam::crossbeam_channel::{unbounded, Receiver, Sender};
-use crossbeam::deque;
-use crossbeam::deque::Steal;
-use std::sync::MutexGuard;
-use std::sync::{Arc, Mutex};
-use std::time;
+use crate::constellation::ConstellationTrait;
+use crate::event::Event;
+use crate::activity::ActivityTrait;
+use crate::context::Context;
 use crate::activity_identifier::ActivityIdentifier;
-use std::any::Any;
+use crate::constellation_identifier::ConstellationIdentifier;
+use crate::constellation_config::ConstellationConfiguration;
+use super::super::error::ConstellationError;
+use super::super::activity_wrapper::ActivityWrapperTrait;
+use super::inner_constellation::InnerConstellation;
+use super::executor_thread::ExecutorThread;
+
+use crossbeam::{deque, unbounded};
+use crossbeam::{Sender, Receiver};
 
 /// A single threaded Constellation initializer, it creates an executor thread
 /// and a InnerConstellation object. The inner_constellation contains all
@@ -49,8 +42,8 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// boolean which will ALWAYS have the value true.
     /// Upon failure a ConstellationError will be returned
     fn activate(&mut self) -> Result<bool, ConstellationError> {
-        let (sender, receiver): (Sender<i32>, Receiver<i32>) = unbounded();
-        let (sender2, receiver2) = (sender.clone(), receiver.clone());
+        let (send_to_thread, receive_in_thread): (Sender<i32>, Receiver<i32>) = unbounded();
+        let (send_to_parent, receive_in_parent): (Sender<i32>, Receiver<i32>) = unbounded();
 
         let mut inner_work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
         let mut inner_event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
@@ -73,8 +66,8 @@ impl ConstellationTrait for SingleThreadConstellation {
             let local_event_queue = inner_event_queue;
 
             let mut executor = ExecutorThread::new(
-                sender2,
-                receiver2,
+                send_to_parent,
+                receive_in_thread,
                 local_work_queue,
                 local_event_queue,
                 inner_constellation,
@@ -82,7 +75,7 @@ impl ConstellationTrait for SingleThreadConstellation {
             executor.run();
         });
 
-        self.executor = Some(ThreadHandler::new(join_handle, sender, receiver));
+        self.executor = Some(ThreadHandler::new(join_handle, send_to_thread, receive_in_parent));
 
         return Ok(true);
     }
@@ -203,14 +196,14 @@ impl SingleThreadConstellation {
 /// * `sender` - Sender channel used for sending data to the executor
 /// * `receiver` - Receiver channel used for receiving data from the executor
 struct ThreadHandler {
-    join_handle: JoinHandle<()>,
+    join_handle: thread::JoinHandle<()>,
     sender: Sender<i32>,
     receiver: Receiver<i32>,
 }
 
 impl ThreadHandler {
     fn new(
-        join_handle: JoinHandle<()>,
+        join_handle: thread::JoinHandle<()>,
         sender: Sender<i32>,
         receiver: Receiver<i32>,
     ) -> ThreadHandler {
@@ -218,97 +211,6 @@ impl ThreadHandler {
             join_handle,
             sender,
             receiver,
-        }
-    }
-}
-
-/// Executor thread, runs in a separate thread and is in charge of executing
-/// activities. It will periodically check for work in the Constellation
-/// instance using it's shared queues.
-///
-/// * `sender` - Sender channel to send data to the Constellation instance.
-/// * `receiver` - Receiver channel to receive data from the Constellation instance.
-/// * `work_queue` - Shared queue with Constellation instance, used to grab
-/// work when available.
-/// * `event_queue` - Shared queue for events containing data, executor will
-/// check this queue whenever if is expecting events
-/// * `constellation` - A reference to the InnerConstellation instance, required
-/// by the functions in the activities executed
-struct ExecutorThread {
-    sender: Sender<i32>,
-    receiver: Receiver<i32>,
-    work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
-    local: deque::Worker<Box<dyn ActivityWrapperTrait>>,
-    constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
-}
-
-impl ExecutorThread {
-    /// Create a new ExecutorThread
-    ///
-    /// * `ExecutorThread` - New executor thread
-    fn new(
-        sender: Sender<i32>,
-        receiver: Receiver<i32>,
-        work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-        event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
-        constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
-    ) -> ExecutorThread{
-        ExecutorThread {
-            sender,
-            receiver,
-            work_queue,
-            event_queue,
-            local: deque::Worker::new_fifo(),
-            constellation,
-        }
-    }
-
-    /// Tries to steal a batch of work from the shared work_queue. If there is
-    /// work, it will return one of the stolen jobs, which is to be
-    /// executed immediately.
-    ///
-    /// # Returns
-    /// * `Option<Box<dyn ActivityWrapperTrait>>` - If there is work, it will
-    /// pop one job from the local queue and return that wrapped in Some(..)
-    fn check_for_work(&mut self) -> Option<Box<dyn ActivityWrapperTrait>> {
-        // Steal work from shared activity queue, if available
-        if let Steal::Success(activity) = self.work_queue.lock().unwrap()
-            .steal_batch_and_pop(&self.local) {
-            return Some(activity);
-        }
-
-        None
-    }
-
-    /// Process a stolen activity, this is the main function of executing a
-    /// activity.
-    ///
-    /// ADD MORE WHEN FURTHER
-    ///
-    /// # Arguments
-    /// * `activity` - A boxed activity to perform work on.
-    fn process_work(&mut self, mut activity: Box<dyn ActivityWrapperTrait>) {
-        self.initialize(activity);
-    }
-
-    /// Call initialize on the activity
-    fn initialize(&mut self, mut activity: Box<dyn ActivityWrapperTrait>){
-        activity.initialize(self.constellation.clone());
-    }
-
-    /// This will startup the thread, periodically check for work forever or
-    /// if shut down from InnerConstellation/SingleThreadedConstellation.
-    fn run(&mut self) {
-        let time = time::Duration::from_secs(1);
-        thread::sleep(time);
-
-        for _ in 0..20 {
-            let mut work = self.check_for_work();
-            match work {
-                Some(x) => self.process_work(x),
-                None => (),
-            }
         }
     }
 }

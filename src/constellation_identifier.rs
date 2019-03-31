@@ -4,7 +4,6 @@ use mpi::topology::Communicator;
 use mpi::topology::Rank;
 use std::collections::HashMap;
 use std::fmt;
-use crate::activity_identifier::ActivityIdentifier;
 
 #[derive(Debug)]
 pub struct ConstellationIdentifier {

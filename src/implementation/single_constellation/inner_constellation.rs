@@ -1,20 +1,24 @@
-use crate::constellation::ConstellationTrait;
-use crate::constellation_identifier::ConstellationIdentifier;
+extern crate crossbeam;
+extern crate mpi;
+
 use std::sync::Arc;
 use std::sync::Mutex;
+
+use crate::constellation::ConstellationTrait;
+use crate::constellation_identifier::ConstellationIdentifier;
 use crate::activity::ActivityTrait;
 use crate::context::Context;
 use crate::implementation::error::ConstellationError;
 use crate::event::Event;
 use crate::activity_identifier::ActivityIdentifier;
-use std::sync::MutexGuard;
 use crate::implementation::activity_wrapper::ActivityWrapper;
 use crate::implementation::activity_wrapper::ActivityWrapperTrait;
-use super::mpi::environment::Universe;
-use super::mpi::topology::SystemCommunicator;
-use super::mpi::topology::Communicator;
+
 use crossbeam::deque;
 
+use mpi::environment::Universe;
+use mpi::topology::SystemCommunicator;
+use mpi::topology::Communicator;
 
 /// Inner single threaded Constellation instance, shared with the application.
 /// The parent will be the multi threaded constellation handler
