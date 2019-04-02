@@ -2,23 +2,22 @@
 extern crate crossbeam;
 extern crate mpi;
 
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::constellation::ConstellationTrait;
-use crate::event::Event;
-use crate::activity::ActivityTrait;
-use crate::context::Context;
-use crate::activity_identifier::ActivityIdentifier;
-use crate::constellation_identifier::ConstellationIdentifier;
-use crate::constellation_config::ConstellationConfiguration;
-use super::super::error::ConstellationError;
 use super::super::activity_wrapper::ActivityWrapperTrait;
-use super::inner_constellation::InnerConstellation;
+use super::super::error::ConstellationError;
 use super::executor_thread::ExecutorThread;
+use super::inner_constellation::InnerConstellation;
+use crate::activity::ActivityTrait;
+use crate::activity_identifier::ActivityIdentifier;
+use crate::constellation::ConstellationTrait;
+use crate::constellation_config::ConstellationConfiguration;
+use crate::constellation_identifier::ConstellationIdentifier;
+use crate::context::Context;
+use crate::event::Event;
 
-use crossbeam::{deque, unbounded};
-use crossbeam::{Sender, Receiver};
+use crossbeam::deque;
 
 /// A single threaded Constellation initializer, it creates an executor thread
 /// and a InnerConstellation object. The inner_constellation contains all
@@ -27,11 +26,10 @@ use crossbeam::{Sender, Receiver};
 /// the references between them.
 pub struct SingleThreadConstellation {
     executor: Option<ThreadHandler>,
-    inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>
+    inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
 }
 
 impl ConstellationTrait for SingleThreadConstellation {
-
     /// Activate the Constellation instance
     ///
     /// This will setup the ExecutorThread and the InnerConstellation object,
@@ -42,21 +40,22 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// boolean which will ALWAYS have the value true.
     /// Upon failure a ConstellationError will be returned
     fn activate(&mut self) -> Result<bool, ConstellationError> {
-        let (send_to_thread, receive_in_thread): (Sender<i32>, Receiver<i32>) = unbounded();
-        let (send_to_parent, receive_in_parent): (Sender<i32>, Receiver<i32>) = unbounded();
-
         let mut inner_work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
         let mut inner_event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
 
-        if let Some(inner) = self.inner_constellation.lock().unwrap().downcast_ref::<InnerConstellation>(){
+        if let Some(inner) = self
+            .inner_constellation
+            .lock()
+            .unwrap()
+            .downcast_ref::<InnerConstellation>()
+        {
             inner_work_queue = inner.work_queue.clone();
             inner_event_queue = inner.event_queue.clone();
         } else {
             panic!("Something went wrong when cloning the work and event queue")
         };
 
-        let inner_constellation =
-            self.inner_constellation.clone();
+        let inner_constellation = self.inner_constellation.clone();
 
         // Start executor thread, it will keep running untill shut down by
         // Constellation
@@ -65,17 +64,12 @@ impl ConstellationTrait for SingleThreadConstellation {
             let local_work_queue = inner_work_queue;
             let local_event_queue = inner_event_queue;
 
-            let mut executor = ExecutorThread::new(
-                send_to_parent,
-                receive_in_thread,
-                local_work_queue,
-                local_event_queue,
-                inner_constellation,
-                );
+            let mut executor =
+                ExecutorThread::new(local_work_queue, local_event_queue, inner_constellation);
             executor.run();
         });
 
-        self.executor = Some(ThreadHandler::new(join_handle, send_to_thread, receive_in_parent));
+        self.executor = Some(ThreadHandler::new(join_handle));
 
         return Ok(true);
     }
@@ -102,22 +96,24 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// this Activity
     fn submit(
         &mut self,
-        activity: &Arc<Mutex<dyn ActivityTrait>>,
+        activity: Arc<Mutex<dyn ActivityTrait>>,
         context: &Context,
         may_be_stolen: bool,
         expects_events: bool,
     ) -> ActivityIdentifier {
-        self.inner_constellation.lock().unwrap().submit(activity,
-                                                        context,
-                                                        may_be_stolen,
-                                                        expects_events)
+        self.inner_constellation.lock().unwrap().submit(
+            activity,
+            context,
+            may_be_stolen,
+            expects_events,
+        )
     }
 
     /// Perform a send operation with the event specified as argument
     ///
     /// # Arguments
     /// * `e` - Event to send
-    fn send(&mut self, e: Event) {
+    fn send(&mut self, e: Box<Event>) {
         self.inner_constellation.lock().unwrap().send(e);
     }
 
@@ -164,7 +160,10 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// # Returns
     /// * `ConstellationIdentifier` - A unique ConstellationIdentifier
     fn generate_identifier(&mut self) -> ConstellationIdentifier {
-        self.inner_constellation.lock().unwrap().generate_identifier()
+        self.inner_constellation
+            .lock()
+            .unwrap()
+            .generate_identifier()
     }
 }
 
@@ -181,10 +180,10 @@ impl SingleThreadConstellation {
     pub fn new(_config: Box<ConstellationConfiguration>) -> SingleThreadConstellation {
         SingleThreadConstellation {
             executor: None,
-            inner_constellation: Arc::new(Mutex::new(Box::new(
-                InnerConstellation::new(Arc::new(Mutex::new(deque::Injector::new())),
-                                        Arc::new(Mutex::new(deque::Injector::new()))
-                )))),
+            inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(
+                Arc::new(Mutex::new(deque::Injector::new())),
+                Arc::new(Mutex::new(deque::Injector::new())),
+            )))),
         }
     }
 }
@@ -193,24 +192,12 @@ impl SingleThreadConstellation {
 /// the executor thread and SingleThreadedConstellation
 ///
 /// * `join_handle` - The handle returned when creating the executor thread
-/// * `sender` - Sender channel used for sending data to the executor
-/// * `receiver` - Receiver channel used for receiving data from the executor
 struct ThreadHandler {
     join_handle: thread::JoinHandle<()>,
-    sender: Sender<i32>,
-    receiver: Receiver<i32>,
 }
 
 impl ThreadHandler {
-    fn new(
-        join_handle: thread::JoinHandle<()>,
-        sender: Sender<i32>,
-        receiver: Receiver<i32>,
-    ) -> ThreadHandler {
-        ThreadHandler {
-            join_handle,
-            sender,
-            receiver,
-        }
+    fn new(join_handle: thread::JoinHandle<()>) -> ThreadHandler {
+        ThreadHandler { join_handle }
     }
 }

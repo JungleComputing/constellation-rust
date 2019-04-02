@@ -7,13 +7,12 @@ use mpi::topology::{Communicator, Rank};
 use mpi::Count;
 use std::collections::HashMap;
 
-
 /// Store node information
 ///
 /// * `node_name` - The processor name, can be received with
 /// mpi::environment::processor_name() from one of the processes running on the node
 /// * `node_id` - An unique identifier for this node
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct NodeHandler {
     pub node_name: String,
     pub node_id: usize,

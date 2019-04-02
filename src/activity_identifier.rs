@@ -4,11 +4,11 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-pub trait ActivityIdentifierTrait {
+pub trait ActivityIdentifierTrait: PartialEq {
     fn to_string(&self) -> String;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct ActivityIdentifier {
     pub constellation_id: i32,
     pub node_info: NodeHandler,
@@ -26,7 +26,11 @@ impl ActivityIdentifierTrait for ActivityIdentifier {
 
 impl fmt::Display for ActivityIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CID:{}:NID:{}:AID:{}", self.constellation_id, self.node_info.node_id, self.activity_id)
+        write!(
+            f,
+            "CID:{}:NID:{}:AID:{}",
+            self.constellation_id, self.node_info.node_id, self.activity_id
+        )
     }
 }
 
@@ -36,11 +40,21 @@ impl ActivityIdentifier {
 
         ActivityIdentifier {
             constellation_id: const_id.constellation_id,
-            node_info: NodeHandler{
+            node_info: NodeHandler {
                 node_name: const_id.node_info.node_name.clone(),
-                node_id: const_id.node_info.node_id
+                node_id: const_id.node_info.node_id,
             },
             activity_id: const_id.generate_activity_id(),
         }
     }
 }
+
+impl PartialEq for ActivityIdentifier {
+    fn eq(&self, other: &ActivityIdentifier) -> bool {
+        (self.activity_id == other.activity_id)
+            && (self.node_info.node_id == other.node_info.node_id)
+            && (self.constellation_id == other.constellation_id)
+    }
+}
+
+impl Eq for ActivityIdentifier {}

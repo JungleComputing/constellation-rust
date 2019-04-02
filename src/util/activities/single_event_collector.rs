@@ -1,11 +1,15 @@
 use crate::activity;
 use crate::activity::ActivityTrait;
+use crate::activity_identifier::ActivityIdentifier;
 use crate::constellation::ConstellationTrait;
 use crate::event::Event;
+
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 pub struct SingleEventCollector {
-    event: Option<Event>,
+    pub event: Option<Box<Event>>,
 }
 
 impl ActivityTrait for SingleEventCollector {
@@ -13,33 +17,50 @@ impl ActivityTrait for SingleEventCollector {
         // no cleanup necessary
     }
 
-    fn initialize(&mut self, _: Arc<Mutex<Box<dyn ConstellationTrait>>>) -> usize {
+    fn initialize(
+        &mut self,
+        _: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+        _id: &ActivityIdentifier,
+    ) -> activity::State {
         // Don't process anything, just suspend for later processing
-        return activity::SUSPEND;
+        return activity::State::SUSPEND;
     }
 
-    fn process(&mut self, _: Arc<Mutex<Box<dyn ConstellationTrait>>>, event: Event) -> usize {
-        // TODO Notify wait_for_event that event has been received
-        self.event = Some(event);
+    fn process(
+        &mut self,
+        _: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+        event: Option<Box<Event>>,
+        _id: &ActivityIdentifier,
+    ) -> activity::State {
+        self.event = event;
 
-        return activity::FINISH;
+        match &self.event {
+            Some(_e) => {
+                return activity::State::FINISH;
+            }
+            None => {
+                return activity::State::SUSPEND;
+            }
+        }
     }
 }
 
 impl SingleEventCollector {
-    pub fn new() -> Arc<Mutex<dyn ActivityTrait>> {
-        Arc::from(Mutex::from(SingleEventCollector {
-            event: None,
-        }))
+    pub fn new() -> Arc<Mutex<SingleEventCollector>> {
+        Arc::from(Mutex::from(SingleEventCollector { event: None }))
     }
 
-    /// This method blocks waiting until an event has been received, upon which
-    /// it returns the event
-    ///
-    /// # Returns
-    /// * `Event` -> The event received
-    pub fn wait_for_event(&self) -> Event {
-        // TODO This method needs to be implemented
-        unimplemented!();
+    pub fn get_event(sec: Arc<Mutex<SingleEventCollector>>, interval: Duration) -> Box<Event> {
+        loop {
+            let guard = sec.lock().unwrap();
+
+            if let Some(event) = guard.event.clone() {
+                return event;
+            }
+
+            // Release mutex
+            drop(guard);
+            thread::sleep(interval);
+        }
     }
 }
