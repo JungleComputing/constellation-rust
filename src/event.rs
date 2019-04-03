@@ -1,4 +1,4 @@
-use super::message::MessageTrait;
+use super::payload::PayloadTrait;
 use crate::activity_identifier::ActivityIdentifier;
 use std::fmt;
 
@@ -7,25 +7,25 @@ use std::fmt;
 /// * `src` - Holds the identifier of the src activity, this is set internally
 /// upon submitting an event and is therefor None before sending.
 /// * `dst` - Destination activity identifier
-/// * `message` - Data which should be communicated
+/// * `payload` - Data which should be communicated
 #[derive(Clone, Debug)]
 pub struct Event {
     src: ActivityIdentifier,
     dst: ActivityIdentifier,
-    message: Box<dyn MessageTrait>,
+    payload: Box<dyn PayloadTrait>,
 }
 
 impl Event {
     pub fn new(
-        message: Box<dyn MessageTrait>,
+        payload: Box<dyn PayloadTrait>,
         src: ActivityIdentifier,
         dst: ActivityIdentifier,
     ) -> Box<Event> {
-        Box::new(Event { src, dst, message })
+        Box::new(Event { src, dst, payload })
     }
 
-    pub fn get_message(&self) -> &Box<dyn MessageTrait> {
-        &self.message
+    pub fn get_payload(&self) -> &Box<dyn PayloadTrait> {
+        &self.payload
     }
 
     pub fn get_src(&self) -> ActivityIdentifier {
@@ -42,7 +42,7 @@ impl fmt::Display for Event {
         write!(
             f,
             "Src: {}\nDst: {}\nData: {:?}",
-            self.src, self.dst, self.message
+            self.src, self.dst, self.payload
         )
     }
 }

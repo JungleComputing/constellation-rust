@@ -18,6 +18,8 @@ use crate::context::Context;
 use crate::event::Event;
 
 use crossbeam::deque;
+use crossbeam::{Receiver, Sender, unbounded};
+use std::time;
 
 /// A single threaded Constellation initializer, it creates an executor thread
 /// and a InnerConstellation object. The inner_constellation contains all
@@ -27,6 +29,7 @@ use crossbeam::deque;
 pub struct SingleThreadConstellation {
     executor: Option<ThreadHandler>,
     inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+    debug: bool,
 }
 
 impl ConstellationTrait for SingleThreadConstellation {
@@ -40,8 +43,14 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// boolean which will ALWAYS have the value true.
     /// Upon failure a ConstellationError will be returned
     fn activate(&mut self) -> Result<bool, ConstellationError> {
+        if self.debug {
+            info!("Activating Single Threaded Constellation");
+        }
+
         let mut inner_work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
         let mut inner_event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
+        let (s, r): (Sender<bool>, Receiver<bool>) = unbounded();
+        let (s2, r2): (Sender<bool>, Receiver<bool>) = unbounded();
 
         if let Some(inner) = self
             .inner_constellation
@@ -59,17 +68,17 @@ impl ConstellationTrait for SingleThreadConstellation {
 
         // Start executor thread, it will keep running untill shut down by
         // Constellation
-        let join_handle = thread::spawn(move || {
+        thread::spawn(move || {
             // Start checking periodically for work
             let local_work_queue = inner_work_queue;
             let local_event_queue = inner_event_queue;
 
             let mut executor =
-                ExecutorThread::new(local_work_queue, local_event_queue, inner_constellation);
+                ExecutorThread::new(local_work_queue, local_event_queue, inner_constellation, r, s2);
             executor.run();
         });
 
-        self.executor = Some(ThreadHandler::new(join_handle));
+        self.executor = Some(ThreadHandler::new(r2, s));
 
         return Ok(true);
     }
@@ -124,7 +133,47 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// it could succesfully shutdown, false otherwise.
     /// Upon error a ConstellationError is returned
     fn done(&mut self) -> Result<bool, ConstellationError> {
-        self.inner_constellation.lock().unwrap().done()
+        if self.debug {
+            info!("Attempting to shut down Constellation gracefully");
+        }
+
+        // Check if we still have activities running
+        let mut guard = self.inner_constellation.lock().unwrap();
+
+        let inner_result = guard.done();
+
+        match inner_result {
+            Err(_) => {
+                return inner_result
+            },
+            _ => ()
+        }
+        drop(guard);
+
+        // Shut down thread
+        let handler = self.executor.as_ref().unwrap();
+        handler.sender.send(true).expect(
+            "Failed to send signal to executor"
+        );
+
+        let time = time::Duration::from_secs(10);
+        if self.debug {
+            info!("Waiting for {}s for executor thread to shut down", 10);
+        }
+
+        if let Ok(r) = handler.receiver.recv_timeout(time) {
+            if !r {
+                warn!("Executor thread has activities or events to process");
+                return Err(ConstellationError);
+            }
+        } else {
+            warn!("Timeout waiting for the executor thread to shutdown");
+            return Err(ConstellationError);
+        }
+
+        info!("Shutdown successful");
+        Ok(true)
+
     }
 
     /// Retrieve an identifier for this Constellation instance
@@ -177,13 +226,15 @@ impl SingleThreadConstellation {
     /// # Returns
     /// * `SingleThreadedConstellation` - New single threaded Constellation
     /// instance
-    pub fn new(_config: Box<ConstellationConfiguration>) -> SingleThreadConstellation {
+    pub fn new(config: Box<ConstellationConfiguration>) -> SingleThreadConstellation {
         SingleThreadConstellation {
             executor: None,
             inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(
                 Arc::new(Mutex::new(deque::Injector::new())),
                 Arc::new(Mutex::new(deque::Injector::new())),
+                &config,
             )))),
+            debug: config.debug,
         }
     }
 }
@@ -191,13 +242,16 @@ impl SingleThreadConstellation {
 /// struct holding necessary data structures needed for communication between
 /// the executor thread and SingleThreadedConstellation
 ///
-/// * `join_handle` - The handle returned when creating the executor thread
+/// * `receiver` - Used to receive signals from executor thread
+/// * `sender` - Used to send signal executor thread when ready
+/// to shut down gracefully
 struct ThreadHandler {
-    join_handle: thread::JoinHandle<()>,
+    receiver: Receiver<bool>,
+    sender: Sender<bool>,
 }
 
 impl ThreadHandler {
-    fn new(join_handle: thread::JoinHandle<()>) -> ThreadHandler {
-        ThreadHandler { join_handle }
+    fn new(receiver: Receiver<bool>, sender: Sender<bool>) -> ThreadHandler {
+        ThreadHandler { receiver, sender }
     }
 }

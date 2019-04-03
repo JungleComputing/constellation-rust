@@ -21,10 +21,9 @@ impl ConstellationIdentifier {
         let mut const_id = ConstellationIdentifier {
             constellation_id: 0,
             node_info: node_handler::NodeHandler {
-                node_name: mpi::environment::processor_name().expect(
-                    "Could not retrieve processor_name"
-                ),
-                node_id: 0
+                node_name: mpi::environment::processor_name()
+                    .expect("Could not retrieve processor_name"),
+                node_id: 0,
             },
             group: HashMap::new(),
             activity_counter: 0,
@@ -43,7 +42,7 @@ impl ConstellationIdentifier {
             constellation_id: 0,
             node_info: node_handler::NodeHandler {
                 node_name: "EMPTY".to_string(),
-                node_id: 0
+                node_id: 0,
             },
             group: HashMap::new(),
             activity_counter: 0,
@@ -58,13 +57,20 @@ impl ConstellationIdentifier {
     }
 
     pub fn to_string(&self) -> String {
-        String::from(format!("CID:{}:{}", self.constellation_id, self.node_info.node_id))
+        String::from(format!(
+            "CID:{}:{}",
+            self.constellation_id, self.node_info.node_id
+        ))
     }
 }
 
 impl fmt::Display for ConstellationIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CID:{}:{}", self.constellation_id, self.node_info.node_id)
+        write!(
+            f,
+            "CID:{}:{}",
+            self.constellation_id, self.node_info.node_id
+        )
     }
 }
 

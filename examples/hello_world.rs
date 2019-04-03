@@ -1,4 +1,4 @@
-//! Create two activities and send a Hello World message from one to the other.
+//! Create two activities and send a Hello World payload from one to the other.
 
 extern crate constellation_rust;
 
@@ -12,32 +12,32 @@ use constellation_rust::constellation_config;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
 use constellation_rust::event::Event;
-use constellation_rust::message::{MessageTrait, MessageTraitClone};
+use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
 use constellation_rust::{activity, activity::ActivityTrait};
 use constellation_rust::{steal_strategy, SingleEventCollector};
 
-/// Message struct for passing data between activities
+/// Payload struct for passing data between activities
 /*---------------------------------------------------------------------------*/
 #[derive(Debug, Clone)]
-struct Message {
+struct Payload {
     data: String,
 }
 
-impl MessageTrait for Message {}
+impl PayloadTrait for Payload {}
 
-impl MessageTraitClone for Message {
-    fn clone_box(&self) -> Box<dyn MessageTrait> {
+impl PayloadTraitClone for Payload {
+    fn clone_box(&self) -> Box<dyn PayloadTrait> {
         Box::new(self.clone())
     }
 }
 
-impl fmt::Display for Message {
+impl fmt::Display for Payload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
 
-/// Activity which only sends an event containing the message "hello world"
+/// Activity which only sends an event containing the payload "hello world"
 /// to another specified activity
 /*---------------------------------------------------------------------------*/
 struct HelloWorldActivity {
@@ -55,14 +55,13 @@ impl ActivityTrait for HelloWorldActivity {
         id: &ActivityIdentifier,
     ) -> activity::State {
         // Create an event and send it to process with id self.target
-
-        let msg = Message {
+        let msg = Payload {
             data: "Hello World".to_string(),
         };
 
         let event = Event::new(Box::from(msg), id.clone(), self.target.clone());
 
-        // Send the event containing the message string
+        // Send the event containing the payload string
         constellation
             .lock()
             .expect("Could not get lock on Constellation instance")
@@ -83,9 +82,9 @@ impl ActivityTrait for HelloWorldActivity {
 }
 /*---------------------------------------------------------------------------*/
 
-/// Create two activities, one which sends a "message" type containing the
+/// Create two activities, one which sends a "payload" type containing the
 /// string "Hello World" to anther activity, which only purpose is to wait for
-/// the message and then return it to this program, in order to be displayed.
+/// the payload and then return it to this program, in order to be displayed.
 ///
 /// # Arguments
 /// * `constellation` - A boxed Constellation instance
@@ -120,16 +119,24 @@ fn run(mut constellation: Box<dyn ConstellationTrait>) {
 
         let time = std::time::Duration::from_secs(1);
 
+        println!("Waiting for payload in SingleEventCollector...");
         let e = SingleEventCollector::get_event(sec, time);
 
-        println!("Waiting for message in SingleEventCollector...");
+        println!("Got payload! Shutting down Constellation");
+
+        // Shut down constellation gracefully
+        constellation.done().expect(
+            "Failed to shutdown constellation"
+        );
 
         println!(
-            "\nGot event!!\nSRC activity ID: {}\
-             \nDST activity ID: {}\nMessage: {}",
+            "\n-----------------------------------------------------------\
+            \nSRC activity ID: {}\
+             \nDST activity ID: {}\nPayload: {}\
+             \n-----------------------------------------------------------",
             e.get_src(),
             e.get_dst(),
-            e.get_message()
+            e.get_payload(),
         );
     }
 }
@@ -146,11 +153,12 @@ fn main() {
         args[1]
     ));
 
-    let const_config = constellation_config::ConstellationConfiguration::new_all(
+    let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
+        true,
     );
 
     let mut constellation = new_constellation(Mode::SingleThreaded, const_config);

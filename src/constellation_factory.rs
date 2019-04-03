@@ -1,7 +1,6 @@
-use crate::constellation::ConstellationTrait;
-use crate::constellation_config::ConstellationConfiguration;
-
-use super::single_threaded_constellation;
+use super::constellation::ConstellationTrait;
+use super::constellation_config::ConstellationConfiguration;
+use super::implementation::single_constellation::single_threaded_constellation;
 
 /// Use to specify which constellation instance to create
 pub enum Mode {

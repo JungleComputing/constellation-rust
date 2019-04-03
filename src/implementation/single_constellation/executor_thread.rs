@@ -1,7 +1,6 @@
 extern crate crossbeam;
 
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time;
 
 use super::super::activity_wrapper::ActivityWrapperTrait;
@@ -12,6 +11,7 @@ use crate::event::Event;
 
 use crossbeam::deque;
 use crossbeam::deque::Steal;
+use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
 
 /// The executor thread runs in asynchronously and is in charge of executing
@@ -35,6 +35,8 @@ use hashbrown::HashMap;
 /// on this thread
 /// * `constellation` - A reference to the InnerConstellation instance, required
 /// by the functions in the activities executed
+/// * `receiver` - Receiving channel used to get signals from parent
+/// * `sender` - Sending channel used to signal parent
 pub struct ExecutorThread {
     work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
     local_work: deque::Worker<Box<dyn ActivityWrapperTrait>>,
@@ -42,6 +44,8 @@ pub struct ExecutorThread {
     event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
     events_waiting: HashMap<ActivityIdentifier, Box<Event>>,
     constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+    receiver: Receiver<bool>,
+    sender: Sender<bool>,
 }
 
 impl ExecutorThread {
@@ -61,6 +65,8 @@ impl ExecutorThread {
         work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
         event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
         constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+        receiver: Receiver<bool>,
+        sender: Sender<bool>,
     ) -> ExecutorThread {
         ExecutorThread {
             work_queue,
@@ -69,6 +75,8 @@ impl ExecutorThread {
             event_queue,
             events_waiting: HashMap::new(),
             constellation,
+            receiver,
+            sender,
         }
     }
 
@@ -220,8 +228,8 @@ impl ExecutorThread {
     /// This will startup the thread, periodically check for work forever or
     /// if shut down from InnerConstellation/SingleThreadedConstellation.
     pub fn run(&mut self) {
-        let time = time::Duration::from_secs(1);
-        thread::sleep(time);
+        // Wait for signal for 10 microseconds before proceeding
+        let time = time::Duration::from_micros(10);
 
         loop {
             // Check for events from parent
@@ -242,6 +250,45 @@ impl ExecutorThread {
                 Some(x) => self.run_activity(x),
                 None => (),
             }
+
+            // Check for signal to shut down
+            if let Ok(val) = self.receiver.recv_timeout(time) {
+                if val {
+                    info!("Got signal to shutdown");
+
+                    if self.queues_empty() {
+
+                        // Signal that we are shutting down
+                        self.sender.send(true).expect(
+                            "Failed to send signal to \
+                            InnerConstellation from executor thread"
+                        );
+                        return;
+
+                    } else {
+                        self.sender.send(false).expect(
+                            "Failed to send signal to \
+                            InnerConstellation from executor thread"
+                        );
+                    }
+                }
+            }
         }
+    }
+
+    /// Returns whether there is something left in the queues
+    ///
+    /// # Returns
+    /// * `bool` - Boolean
+    ///     - true: There are remaining items
+    ///     - false: THere are no remaining items
+    pub fn queues_empty(&self) -> bool {
+        if self.local_work.is_empty() &&
+            self.suspended_work.is_empty() &&
+            self.events_waiting.is_empty() {
+            return true;
+        }
+
+        false
     }
 }

@@ -4,7 +4,7 @@
 extern crate mpi;
 
 use mpi::environment::Universe;
-use mpi::topology::{SystemCommunicator, Communicator};
+use mpi::topology::{Communicator, SystemCommunicator};
 
 /// Get the MPI rank of the calling process
 pub fn rank(universe: &Universe) -> i32 {
