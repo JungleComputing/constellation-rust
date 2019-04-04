@@ -15,3 +15,4 @@ See the directory `examples/` for various example implementations. To execute an
 - Steal strategies
 - Steal pools
 - Add functionality to specify max size of work_queues on each executor thread
+- SIMPLIFY THE API AS MUCH AS POSSIBLE
