@@ -10,6 +10,8 @@ use crate::event::Event;
 
 pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display {
     fn activity_identifier(&self) -> &ActivityIdentifier;
+    fn expects_event(&self) -> bool;
+    fn may_be_stolen(&self) -> bool;
 }
 
 /// Structure for internal use inside Constellation only. As soon as an
@@ -41,6 +43,14 @@ pub struct ActivityWrapper {
 impl ActivityWrapperTrait for ActivityWrapper {
     fn activity_identifier(&self) -> &ActivityIdentifier {
         &self.id
+    }
+
+    fn expects_event(&self) -> bool {
+        return self.expects_events
+    }
+
+    fn may_be_stolen(&self) -> bool {
+        return self.may_be_stolen
     }
 }
 

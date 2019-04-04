@@ -116,9 +116,20 @@ impl ExecutorThread {
     /// # Arguments
     /// * `activity` - A boxed activity to perform work on.
     fn run_activity(&mut self, mut activity: Box<dyn ActivityWrapperTrait>) {
-        // Execute the initialize, process and cleanup methods of the stolen activity
-
         let aid = activity.activity_identifier().clone();
+
+        let mut event;
+
+        // Check if activity is expecting an event, check if event is received
+        if activity.expects_event() {
+            if self.events_waiting.contains_key(activity.activity_identifier()) {
+                event = self.events_waiting.remove(&aid).unwrap();
+            } else {
+                self.suspended_work.insert(aid, activity);
+                return;
+            }
+        }
+
 
         // Initialize
         match activity.initialize(self.constellation.clone(), &aid) {
@@ -263,7 +274,7 @@ impl ExecutorThread {
                             "Failed to send signal to \
                             InnerConstellation from executor thread"
                         );
-                        return;
+                        return; // Shutdown thread
 
                     } else {
                         self.sender.send(false).expect(

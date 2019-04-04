@@ -97,7 +97,7 @@ fn constellation_vector_add(
     result
 }
 
-/// Create vectors depening on array_length and print result after execution
+/// Create vectors deepening on array_length and print result after execution
 ///
 /// # Arguments
 /// * `constellation` - Constellation instance
@@ -145,7 +145,7 @@ fn main() {
     if args.len() < 3 {
         println!(
             "Please provide an number of nodes and array length\n\
-             mpirun ARGS hello_world <nmr_nodes> <array_length>"
+             mpirun ARGS vector_add <nmr_nodes> <array_length>"
         );
         exit(1);
     }
