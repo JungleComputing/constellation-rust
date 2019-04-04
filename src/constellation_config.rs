@@ -1,3 +1,5 @@
+use crate::context::ContextVec;
+
 pub struct ConstellationConfiguration {
     //    steal_from: StealPool
     //    belongs_to: StealPool
@@ -6,6 +8,7 @@ pub struct ConstellationConfiguration {
     pub remote_steal_strategy: usize,
     pub number_of_nodes: i32,
     pub debug: bool,
+    pub context_vec: ContextVec,
 }
 
 impl ConstellationConfiguration {
@@ -15,6 +18,7 @@ impl ConstellationConfiguration {
         rss: usize,
         nodes: i32,
         debug: bool,
+        context_vec: ContextVec,
     ) -> Box<ConstellationConfiguration> {
 
         //---------------------SET LOGGING--------------------------
@@ -29,6 +33,7 @@ impl ConstellationConfiguration {
             remote_steal_strategy: rss,
             number_of_nodes: nodes,
             debug,
+            context_vec,
         })
     }
 }

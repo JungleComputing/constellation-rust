@@ -232,6 +232,7 @@ impl SingleThreadConstellation {
             inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(
                 Arc::new(Mutex::new(deque::Injector::new())),
                 Arc::new(Mutex::new(deque::Injector::new())),
+                Arc::new(Mutex::new(deque::Injector::new())),
                 &config,
             )))),
             debug: config.debug,

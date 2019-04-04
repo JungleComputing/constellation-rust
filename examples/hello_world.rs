@@ -10,11 +10,13 @@ use constellation_rust::activity_identifier::ActivityIdentifier;
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_config;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
-use constellation_rust::context::Context;
 use constellation_rust::event::Event;
 use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
 use constellation_rust::{activity, activity::ActivityTrait};
 use constellation_rust::{steal_strategy, SingleEventCollector};
+use constellation_rust::context::{ContextVec, Context};
+
+const CONTEXT_LABEL: &str = "Hello_World";
 
 /// Payload struct for passing data between activities
 /*---------------------------------------------------------------------------*/
@@ -56,7 +58,7 @@ impl ActivityTrait for HelloWorldActivity {
     ) -> activity::State {
         // Create an event and send it to process with id self.target
         let msg = Payload {
-            data: "Hello World".to_string(),
+            data: CONTEXT_LABEL.to_string(),
         };
 
         let event = Event::new(Box::from(msg), id.clone(), self.target.clone());
@@ -96,7 +98,7 @@ fn run(mut constellation: Box<dyn ConstellationTrait>) {
     // Only submit activities from one thread.
     if master {
         let context = Context {
-            label: "HelloContext".to_string(),
+            label: CONTEXT_LABEL.to_string(),
         };
 
         let sec = SingleEventCollector::new();
@@ -153,12 +155,16 @@ fn main() {
         args[1]
     ));
 
+    let mut context_vec = ContextVec::new();
+    context_vec.append(&Context{ label: String::from(CONTEXT_LABEL) });
+
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
         true,
+        context_vec,
     );
 
     let mut constellation = new_constellation(Mode::SingleThreaded, const_config);

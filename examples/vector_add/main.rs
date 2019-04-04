@@ -10,11 +10,13 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 use crate::context::CONTEXT;
+
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
 use constellation_rust::{activity, SingleEventCollector};
 use constellation_rust::{constellation_config, steal_strategy};
+use constellation_rust::context::ContextVec;
 
 mod compute_activity;
 mod context;
@@ -55,7 +57,7 @@ fn constellation_vector_add(
     let sec_aid = constellation.submit(
         sec.clone() as Arc<Mutex<activity::ActivityTrait>>,
         &Context {
-            label: String::from(CONTEXT),
+            label: String::from(context::CONTEXT),
         },
         false,
         true,
@@ -75,7 +77,7 @@ fn constellation_vector_add(
     constellation.submit(
         start_compute_activity,
         &Context {
-            label: String::from(CONTEXT),
+            label: String::from(context::CONTEXT),
         },
         true,
         false,
@@ -158,12 +160,16 @@ fn main() {
         args[2]
     ));
 
+    let mut context_vec = ContextVec::new();
+    context_vec.append(&Context{ label: String::from(context::CONTEXT) });
+
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
         true,
+        context_vec,
     );
 
     let mut constellation = new_constellation(Mode::SingleThreaded, const_config);

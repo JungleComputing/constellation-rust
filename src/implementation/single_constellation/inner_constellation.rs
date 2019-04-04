@@ -9,7 +9,7 @@ use crate::activity::ActivityTrait;
 use crate::activity_identifier::ActivityIdentifier;
 use crate::constellation::ConstellationTrait;
 use crate::constellation_identifier::ConstellationIdentifier;
-use crate::context::Context;
+use crate::context::{Context, ContextVec};
 use crate::event::Event;
 use crate::implementation::activity_wrapper::ActivityWrapper;
 use crate::implementation::activity_wrapper::ActivityWrapperTrait;
@@ -33,6 +33,8 @@ use mpi::environment::Universe;
 /// * `universe` - MPI struct containing information about all nodes,
 /// threads and connections in the running Constellation instance.
 /// * `work_queue` - Queue used to share activities with the executor thread
+/// * `work_queue_remote` - Work queue containing all activities which have
+/// context not existing locally
 /// * `event_queue` - Queue used to share events with the executor thread
 /// * `parent` - Possible parent constellation instance, used in multithreading
 pub struct InnerConstellation {
@@ -40,7 +42,9 @@ pub struct InnerConstellation {
     universe: Universe,
     debug: bool,
     nodes: i32,
+    context_vec: ContextVec,
     pub work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+    pub work_queue_remote: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
     pub event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
     pub parent: Option<Arc<Mutex<dyn ConstellationTrait>>>,
 }
@@ -70,11 +74,19 @@ impl ConstellationTrait for InnerConstellation {
             info!("Submitting activity with ID: {}", &activity_id);
         }
 
-        // Insert ActivityWrapper in injector_queue
-        self.work_queue
-            .lock()
-            .expect("Could not get lock on injector_queue, failed to push activity")
-            .push(activity_wrapper);
+        // Check context
+        if self.context_vec.contains(context) {
+            // Insert ActivityWrapper in injector_queue
+            self.work_queue
+                .lock()
+                .expect("Could not get lock on injector_queue, failed to push activity")
+                .push(activity_wrapper);
+        } else {
+            // Let multithreaded constellation handle this activity
+            self.work_queue_remote.lock().expect(
+                "Could not get lock on remote work queue"
+            ).push(activity_wrapper);
+        }
 
         activity_id
     }
@@ -148,6 +160,7 @@ impl ConstellationTrait for InnerConstellation {
 impl InnerConstellation {
     pub fn new(
         work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+        work_queue_remote: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
         event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
         config: &Box<ConstellationConfiguration>,
     ) -> InnerConstellation {
@@ -157,7 +170,9 @@ impl InnerConstellation {
             universe: mpi::initialize().unwrap(),
             debug: config.debug,
             nodes: config.number_of_nodes,
+            context_vec: config.context_vec.clone(),
             work_queue,
+            work_queue_remote,
             event_queue,
             parent: None,
         };
