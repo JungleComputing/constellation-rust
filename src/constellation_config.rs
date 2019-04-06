@@ -20,7 +20,6 @@ impl ConstellationConfiguration {
         debug: bool,
         context_vec: ContextVec,
     ) -> Box<ConstellationConfiguration> {
-
         //---------------------SET LOGGING--------------------------
         if debug {
             simple_logger::init().unwrap();

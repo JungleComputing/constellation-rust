@@ -46,11 +46,11 @@ impl ActivityWrapperTrait for ActivityWrapper {
     }
 
     fn expects_event(&self) -> bool {
-        return self.expects_events
+        return self.expects_events;
     }
 
     fn may_be_stolen(&self) -> bool {
-        return self.may_be_stolen
+        return self.may_be_stolen;
     }
 }
 

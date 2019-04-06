@@ -9,14 +9,12 @@ use std::env;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
-use crate::context::CONTEXT;
-
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
+use constellation_rust::context::ContextVec;
 use constellation_rust::{activity, SingleEventCollector};
 use constellation_rust::{constellation_config, steal_strategy};
-use constellation_rust::context::ContextVec;
 
 mod compute_activity;
 mod context;
@@ -71,7 +69,7 @@ fn constellation_vector_add(
             threshold: THRESHOLD,
             target: sec_aid,
             order: None,
-            waiting_for_event: false
+            waiting_for_event: false,
         }));
 
     constellation.submit(
@@ -123,15 +121,15 @@ fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
 
     if master {
         // Shut down constellation gracefully
-        constellation.done().expect(
-            "Failed to shutdown constellation"
-        );
+        constellation
+            .done()
+            .expect("Failed to shutdown constellation");
 
         let length = if array_length < 40 { array_length } else { 40 };
         println!(
             "\n--------------------------------------------------------\
-            \nThe first {} elements in the resulting array are:\n{:?}\
-            \n--------------------------------------------------------",
+             \nThe first {} elements in the resulting array are:\n{:?}\
+             \n--------------------------------------------------------",
             length,
             &result[0..length as usize]
         );
@@ -161,7 +159,9 @@ fn main() {
     ));
 
     let mut context_vec = ContextVec::new();
-    context_vec.append(&Context{ label: String::from(context::CONTEXT) });
+    context_vec.append(&Context {
+        label: String::from(context::CONTEXT),
+    });
 
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,

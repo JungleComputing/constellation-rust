@@ -10,11 +10,11 @@ use constellation_rust::activity_identifier::ActivityIdentifier;
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_config;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
+use constellation_rust::context::{Context, ContextVec};
 use constellation_rust::event::Event;
 use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
 use constellation_rust::{activity, activity::ActivityTrait};
 use constellation_rust::{steal_strategy, SingleEventCollector};
-use constellation_rust::context::{ContextVec, Context};
 
 const CONTEXT_LABEL: &str = "Hello_World";
 
@@ -127,13 +127,13 @@ fn run(mut constellation: Box<dyn ConstellationTrait>) {
         println!("Got payload! Shutting down Constellation");
 
         // Shut down constellation gracefully
-        constellation.done().expect(
-            "Failed to shutdown constellation"
-        );
+        constellation
+            .done()
+            .expect("Failed to shutdown constellation");
 
         println!(
             "\n-----------------------------------------------------------\
-            \nSRC activity ID: {}\
+             \nSRC activity ID: {}\
              \nDST activity ID: {}\nPayload: {}\
              \n-----------------------------------------------------------",
             e.get_src(),
@@ -156,7 +156,9 @@ fn main() {
     ));
 
     let mut context_vec = ContextVec::new();
-    context_vec.append(&Context{ label: String::from(CONTEXT_LABEL) });
+    context_vec.append(&Context {
+        label: String::from(CONTEXT_LABEL),
+    });
 
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
