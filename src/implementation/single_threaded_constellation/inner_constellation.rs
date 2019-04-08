@@ -16,9 +16,9 @@ use crate::implementation::single_threaded_constellation::executor_thread::Execu
 
 use crossbeam::deque;
 use crossbeam::{unbounded, Receiver, Sender};
+use mpi::environment::Universe;
 use std::thread;
 use std::time;
-use mpi::environment::Universe;
 
 /// This data structure is used in order to share a constellation instance
 /// between both the Executor and SingleThreadedConstellation (initiated by
@@ -141,7 +141,6 @@ impl ConstellationTrait for InnerConstellation {
             warn!("Timeout waiting for the executor thread to shutdown");
             return Err(ConstellationError);
         }
-
         info!("Shutdown successful");
         Ok(true)
     }
