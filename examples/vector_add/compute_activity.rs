@@ -85,7 +85,6 @@ impl activity::ActivityTrait for ComputeActivity {
         event: Option<Box<Event>>,
         id: &ActivityIdentifier,
     ) -> activity::State {
-
         // Check if we got activated because of receiving an event,
         // this indicates that the children are done processing
         if let Some(e) = event {
@@ -101,7 +100,6 @@ impl activity::ActivityTrait for ComputeActivity {
 }
 
 impl ComputeActivity {
-
     /// Compute the result when adding the two vectors together.
     ///
     /// # Returns
@@ -158,7 +156,7 @@ impl ComputeActivity {
             threshold: self.threshold,
             target: id.clone(), // Make child send event to this activity
             order: None,
-            waiting_for_event: false
+            waiting_for_event: false,
         }));
 
         let b: Arc<Mutex<activity::ActivityTrait>> = Arc::new(Mutex::new(ComputeActivity {
@@ -167,7 +165,7 @@ impl ComputeActivity {
             threshold: self.threshold,
             target: id.clone(), // Make child send event to this activity
             order: None,
-            waiting_for_event: false
+            waiting_for_event: false,
         }));
 
         // Acquire lock on constellation

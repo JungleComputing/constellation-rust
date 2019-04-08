@@ -18,3 +18,7 @@ pub fn world(universe: &Universe) -> SystemCommunicator {
 pub fn size(universe: &Universe) -> i32 {
     universe.world().size()
 }
+
+pub fn master(universe: &Universe) -> bool {
+    universe.world().rank() == 0
+}

@@ -118,18 +118,20 @@ impl ExecutorThread {
     fn run_activity(&mut self, mut activity: Box<dyn ActivityWrapperTrait>) {
         let aid = activity.activity_identifier().clone();
 
-        let mut event;
+        let mut event: Option<Box<Event>> = None;
 
         // Check if activity is expecting an event, check if event is received
         if activity.expects_event() {
-            if self.events_waiting.contains_key(activity.activity_identifier()) {
-                event = self.events_waiting.remove(&aid).unwrap();
+            if self
+                .events_waiting
+                .contains_key(activity.activity_identifier())
+            {
+                event = Some(self.events_waiting.remove(&aid).unwrap());
             } else {
                 self.suspended_work.insert(aid, activity);
                 return;
             }
         }
-
 
         // Initialize
         match activity.initialize(self.constellation.clone(), &aid) {
@@ -142,10 +144,13 @@ impl ExecutorThread {
             activity::State::FINISH => {}
         }
 
-        // Check if we have an suspended event correlated to this activity
-        let e = self.events_waiting.remove(&aid);
-
-        self.process(activity, e);
+        if event.is_some() {
+            self.process(activity, event);
+        } else {
+            // Check if we have an suspended event correlated to this activity
+            let e = self.events_waiting.remove(&aid);
+            self.process(activity, e);
+        }
     }
 
     /// Start the process function on an activity and handle return value
@@ -268,18 +273,16 @@ impl ExecutorThread {
                     info!("Got signal to shutdown");
 
                     if self.queues_empty() {
-
                         // Signal that we are shutting down
                         self.sender.send(true).expect(
                             "Failed to send signal to \
-                            InnerConstellation from executor thread"
+                             InnerConstellation from executor thread",
                         );
                         return; // Shutdown thread
-
                     } else {
                         self.sender.send(false).expect(
                             "Failed to send signal to \
-                            InnerConstellation from executor thread"
+                             InnerConstellation from executor thread",
                         );
                     }
                 }
@@ -294,9 +297,10 @@ impl ExecutorThread {
     ///     - true: There are remaining items
     ///     - false: THere are no remaining items
     pub fn queues_empty(&self) -> bool {
-        if self.local_work.is_empty() &&
-            self.suspended_work.is_empty() &&
-            self.events_waiting.is_empty() {
+        if self.local_work.is_empty()
+            && self.suspended_work.is_empty()
+            && self.events_waiting.is_empty()
+        {
             return true;
         }
 

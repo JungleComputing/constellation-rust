@@ -9,14 +9,12 @@ use std::env;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
-use crate::context::CONTEXT;
-
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
+use constellation_rust::context::ContextVec;
 use constellation_rust::{activity, SingleEventCollector};
 use constellation_rust::{constellation_config, steal_strategy};
-use constellation_rust::context::ContextVec;
 
 mod compute_activity;
 mod context;
@@ -71,7 +69,7 @@ fn constellation_vector_add(
             threshold: THRESHOLD,
             target: sec_aid,
             order: None,
-            waiting_for_event: false
+            waiting_for_event: false,
         }));
 
     constellation.submit(
@@ -103,11 +101,7 @@ fn constellation_vector_add(
 /// * `constellation` - Constellation instance
 /// * `array_length` - User defined length of the vectors used in the addition
 fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
-    let master = constellation.is_master().unwrap();
-
-    if master {
-        println!("Running Vector add with {} nodes", constellation.nodes());
-    }
+    println!("Running Vector add with {} nodes", constellation.nodes());
 
     // Create two vectors and fill
     // them with incrementing values from 0..<array_length>
@@ -120,32 +114,29 @@ fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
     }
 
     let result = constellation_vector_add(&mut constellation, vec1, vec2);
+     // Shut down constellation gracefully
+    constellation
+        .done()
+        .expect("Failed to shutdown constellation");
 
-    if master {
-        // Shut down constellation gracefully
-        constellation.done().expect(
-            "Failed to shutdown constellation"
-        );
-
-        let length = if array_length < 40 { array_length } else { 40 };
-        println!(
-            "\n--------------------------------------------------------\
-            \nThe first {} elements in the resulting array are:\n{:?}\
-            \n--------------------------------------------------------",
-            length,
-            &result[0..length as usize]
-        );
-    }
+    let length = if array_length < 40 { array_length } else { 40 };
+    println!(
+        "\n--------------------------------------------------------\
+     \nThe first {} elements in the resulting array are:\n{:?}\
+     \n--------------------------------------------------------",
+        length,
+        &result[0..length as usize]
+    );
 }
 
 /// Gathers user input and creates a constellation instance.
 fn main() {
     // Retrieve user arguments
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
+    if args.len() < 4 {
         println!(
             "Please provide an number of nodes and array length\n\
-             mpirun ARGS vector_add <nmr_nodes> <array_length>"
+             mpirun ARGS vector_add <nmr_nodes> <nmr_threads> <array_length>"
         );
         exit(1);
     }
@@ -155,27 +146,37 @@ fn main() {
         args[1]
     ));
 
-    let array_length = args[1].parse().expect(&format!(
+    let nmr_threads = args[2].parse().expect(&format!(
+        "Cannot parse {} into an integer, please provide number of nodes",
+        args[1]
+    ));
+
+    let array_length = args[3].parse().expect(&format!(
         "Cannot parse {} into an integer, please provide a valid array length",
         args[2]
     ));
 
     let mut context_vec = ContextVec::new();
-    context_vec.append(&Context{ label: String::from(context::CONTEXT) });
+    context_vec.append(&Context {
+        label: String::from(context::CONTEXT),
+    });
 
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
+        nmr_threads,
         true,
         context_vec,
     );
 
-    let mut constellation = new_constellation(Mode::SingleThreaded, const_config);
+    let mut constellation = new_constellation(Mode::MultiThreaded, const_config);
 
     constellation.activate().unwrap();
 
-    // Execute vector add for the given length on the constellation instance
-    run(constellation, array_length);
+    if constellation.is_master().unwrap() {
+        // Execute vector add for the given length on the constellation instance
+        run(constellation, array_length);
+    }
 }

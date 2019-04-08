@@ -18,11 +18,11 @@ impl ContextVec {
         }
     }
 
-    pub fn append(&mut self, context: &Context){
+    pub fn append(&mut self, context: &Context) {
         self.context_vec.push(context.clone());
     }
 
-    pub fn remove(&mut self, context: &Context){
+    pub fn remove(&mut self, context: &Context) {
         self.context_vec.iter().map(|x| x != context);
     }
 
@@ -34,7 +34,7 @@ impl ContextVec {
 impl fmt::Display for ContextVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let tmp: &Vec<Context> = self.context_vec.as_ref(); //.into_iter().map(|x|x.label).collect();
-        let labels: Vec<String> = tmp.into_iter().map(|x|x.label.clone()).collect();
+        let labels: Vec<String> = tmp.into_iter().map(|x| x.label.clone()).collect();
 
         write!(f, "context:{:?}", labels)
     }
@@ -59,4 +59,3 @@ impl PartialEq for Context {
 }
 
 impl Eq for Context {}
-

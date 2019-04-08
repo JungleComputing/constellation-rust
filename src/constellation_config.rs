@@ -1,5 +1,6 @@
 use crate::context::ContextVec;
 
+#[derive(Clone)]
 pub struct ConstellationConfiguration {
     //    steal_from: StealPool
     //    belongs_to: StealPool
@@ -7,6 +8,7 @@ pub struct ConstellationConfiguration {
     pub constellation_steal_strategy: usize,
     pub remote_steal_strategy: usize,
     pub number_of_nodes: i32,
+    pub number_of_threads: i32,
     pub debug: bool,
     pub context_vec: ContextVec,
 }
@@ -17,10 +19,10 @@ impl ConstellationConfiguration {
         css: usize,
         rss: usize,
         nodes: i32,
+        threads: i32,
         debug: bool,
         context_vec: ContextVec,
     ) -> Box<ConstellationConfiguration> {
-
         //---------------------SET LOGGING--------------------------
         if debug {
             simple_logger::init().unwrap();
@@ -32,6 +34,7 @@ impl ConstellationConfiguration {
             constellation_steal_strategy: css,
             remote_steal_strategy: rss,
             number_of_nodes: nodes,
+            number_of_threads: threads,
             debug,
             context_vec,
         })

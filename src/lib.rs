@@ -1,7 +1,9 @@
-#[macro_use] extern crate mopa;
+#[macro_use]
+extern crate mopa;
 extern crate hashbrown;
 extern crate objekt;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate simple_logger;
 
 pub mod activity;

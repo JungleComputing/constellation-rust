@@ -10,11 +10,11 @@ use constellation_rust::activity_identifier::ActivityIdentifier;
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_config;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
+use constellation_rust::context::{Context, ContextVec};
 use constellation_rust::event::Event;
 use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
 use constellation_rust::{activity, activity::ActivityTrait};
 use constellation_rust::{steal_strategy, SingleEventCollector};
-use constellation_rust::context::{ContextVec, Context};
 
 const CONTEXT_LABEL: &str = "Hello_World";
 
@@ -91,56 +91,49 @@ impl ActivityTrait for HelloWorldActivity {
 /// # Arguments
 /// * `constellation` - A boxed Constellation instance
 fn run(mut constellation: Box<dyn ConstellationTrait>) {
-    let master = constellation
-        .is_master()
-        .expect("Error when checking if current node is master");
+    let context = Context {
+        label: CONTEXT_LABEL.to_string(),
+    };
 
-    // Only submit activities from one thread.
-    if master {
-        let context = Context {
-            label: CONTEXT_LABEL.to_string(),
-        };
+    let sec = SingleEventCollector::new();
 
-        let sec = SingleEventCollector::new();
+    // When submitting activity we need to cast the SingleEventCollector to
+    // be of the trait type ActivityTrait
+    let sec_aid = constellation.submit(
+        sec.clone() as Arc<Mutex<ActivityTrait>>,
+        &context,
+        false,
+        true,
+    );
 
-        // When submitting activity we need to cast the SingleEventCollector to
-        // be of the trait type ActivityTrait
-        let sec_aid = constellation.submit(
-            sec.clone() as Arc<Mutex<ActivityTrait>>,
-            &context,
-            false,
-            true,
-        );
+    let hello_activity: Arc<Mutex<ActivityTrait>> =
+        Arc::new(Mutex::new(HelloWorldActivity { target: sec_aid }));
 
-        let hello_activity: Arc<Mutex<ActivityTrait>> =
-            Arc::new(Mutex::new(HelloWorldActivity { target: sec_aid }));
+    constellation.submit(hello_activity, &context, true, false);
 
-        constellation.submit(hello_activity, &context, true, false);
+    println!("Both events submitted to Constellation");
 
-        println!("Both events submitted to Constellation");
+    let time = std::time::Duration::from_secs(1);
 
-        let time = std::time::Duration::from_secs(1);
+    println!("Waiting for payload in SingleEventCollector...");
+    let e = SingleEventCollector::get_event(sec, time);
 
-        println!("Waiting for payload in SingleEventCollector...");
-        let e = SingleEventCollector::get_event(sec, time);
+    println!("Got payload! Shutting down Constellation");
 
-        println!("Got payload! Shutting down Constellation");
+    // Shut down constellation gracefully
+    constellation
+        .done()
+        .expect("Failed to shutdown constellation");
 
-        // Shut down constellation gracefully
-        constellation.done().expect(
-            "Failed to shutdown constellation"
-        );
-
-        println!(
-            "\n-----------------------------------------------------------\
-            \nSRC activity ID: {}\
-             \nDST activity ID: {}\nPayload: {}\
-             \n-----------------------------------------------------------",
-            e.get_src(),
-            e.get_dst(),
-            e.get_payload(),
-        );
-    }
+    println!(
+        "\n-----------------------------------------------------------\
+         \nSRC activity ID: {}\
+         \nDST activity ID: {}\nPayload: {}\
+         \n-----------------------------------------------------------",
+        e.get_src(),
+        e.get_dst(),
+        e.get_payload(),
+    );
 }
 
 /// Main function takes one argument, specifying the number of nodes to use.
@@ -156,13 +149,16 @@ fn main() {
     ));
 
     let mut context_vec = ContextVec::new();
-    context_vec.append(&Context{ label: String::from(CONTEXT_LABEL) });
+    context_vec.append(&Context {
+        label: String::from(CONTEXT_LABEL),
+    });
 
     let const_config = constellation_config::ConstellationConfiguration::new(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
+        1,
         true,
         context_vec,
     );
@@ -171,5 +167,7 @@ fn main() {
 
     constellation.activate().unwrap();
 
-    run(constellation);
+    if constellation.is_master().unwrap() {
+        run(constellation);
+    }
 }

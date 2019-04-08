@@ -10,11 +10,18 @@ pub struct ConstellationIdentifier {
     pub constellation_id: i32,
     pub node_info: node_handler::NodeHandler,
     pub group: HashMap<Rank, node_handler::NodeHandler>, // All processes and their node information
+    pub thread_id: i32,
     activity_counter: u64,
 }
 
 impl ConstellationIdentifier {
-    pub fn new(universe: &Universe) -> ConstellationIdentifier {
+    /// Generate a new ConstellationIdentifier which contains an unique ID for
+    /// this constellation instance, information about how many nodes/threads
+    /// there are as well as the thread which is "currently running"
+    ///
+    /// # Returns
+    /// * `ConstellationIdentifier` - Unique ID for each thread on each node
+    pub fn new(universe: &Universe, thread_id: i32) -> ConstellationIdentifier {
         let world = universe.world();
         let rank = world.rank();
 
@@ -26,6 +33,7 @@ impl ConstellationIdentifier {
                 node_id: 0,
             },
             group: HashMap::new(),
+            thread_id,
             activity_counter: 0,
         };
 
@@ -45,6 +53,7 @@ impl ConstellationIdentifier {
                 node_id: 0,
             },
             group: HashMap::new(),
+            thread_id: 0,
             activity_counter: 0,
         }
     }
@@ -68,8 +77,8 @@ impl fmt::Display for ConstellationIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CID:{}:{}",
-            self.constellation_id, self.node_info.node_id
+            "CID:{}:NID:{}:TID:{}",
+            self.constellation_id, self.node_info.node_id, self.thread_id
         )
     }
 }
@@ -80,6 +89,7 @@ impl Clone for ConstellationIdentifier {
             constellation_id: self.constellation_id.clone(),
             node_info: self.node_info.clone(),
             group: HashMap::new(),
+            thread_id: self.thread_id,
             activity_counter: 0,
         }
     }
