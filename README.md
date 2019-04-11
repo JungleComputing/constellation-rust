@@ -11,8 +11,8 @@ For useful files such as pre-made activities, see the directory `src/util/`.
 ## Dependencies
 * GCC 6.4.0
 * Open MPI 1.10.3
-* CMake 3.12.0
-* LLVM 7.0.1 (for Clang)
+* CMake 3.14.0
+* Clang 7.0.1
 
 ## Examples
 See the directory `examples/` for various example implementations. To execute an example implementation run e.g. `cargo run --example vector_add 1 4 125000`, this will run on 1 node using 4 threads. To run distributed using MPI after compilation, in order to e.g. specify mpi flags, run: `mpirun MPI_ARGS path_to_executable ARGS"`.
