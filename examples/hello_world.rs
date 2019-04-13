@@ -139,6 +139,9 @@ fn run(mut constellation: Box<dyn ConstellationTrait>) {
 /// Main function takes one argument, specifying the number of nodes to use.
 /// It creates a constellation configuration with only steal strategy biggest,
 /// and the activities are very minimalistic.
+///
+/// NOTE, does not actually utilize distributed Constellation atm, but runs a
+/// single threaded instance
 fn main() {
     // Retrieve user arguments
     let args: Vec<String> = env::args().collect();
@@ -153,12 +156,11 @@ fn main() {
         label: String::from(CONTEXT_LABEL),
     });
 
-    let const_config = constellation_config::ConstellationConfiguration::new(
+    let const_config = constellation_config::ConstellationConfiguration::new_single_threaded(
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         steal_strategy::BIGGEST,
         nmr_nodes,
-        1,
         true,
         context_vec,
     );

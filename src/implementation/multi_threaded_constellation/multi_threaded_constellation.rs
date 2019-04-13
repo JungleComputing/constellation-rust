@@ -1,28 +1,29 @@
-use std::sync::{Arc, Mutex};
-
-use crate::activity::ActivityTrait;
-use crate::activity_identifier::ActivityIdentifier;
 use crate::constellation::ConstellationTrait;
-use crate::constellation_config::ConstellationConfiguration;
-use crate::constellation_identifier::ConstellationIdentifier;
-use crate::context::Context;
-use crate::event::Event;
-use crate::implementation::error::ConstellationError;
-use crate::implementation::single_threaded_constellation::single_threaded_constellation::SingleThreadConstellation;
-use hashbrown::HashMap;
-use crate::implementation::activity_wrapper::ActivityWrapperTrait;
 use super::super::mpi::environment::Universe;
+use crate::implementation::error::ConstellationError;
+use crate::activity::ActivityTrait;
+use crate::context::Context;
+use crate::activity_identifier::ActivityIdentifier;
+use crate::event::Event;
+use crate::constellation_identifier::ConstellationIdentifier;
 use crate::implementation::communication::mpi_info;
-
-use crossbeam::deque;
+use crate::constellation_config::ConstellationConfiguration;
+use crate::implementation::thread_helper::{MultiThreadHelper, ExecutorQueues, ThreadHelper};
 use crate::implementation::single_threaded_constellation::inner_constellation::InnerConstellation;
 
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+use crossbeam::{Sender, Receiver, unbounded, deque};
+use std::time;
 
 pub struct MultiThreadedConstellation {
-    inner_constellation_vec: Vec<Arc<Mutex<Box<dyn ConstellationTrait>>>>,
-    local_work: HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>,
+    thread_handler: Option<MultiThreadHelper>,
+    signal_thread_handler: Option<(Sender<bool>, Receiver<bool>)>,
     universe: Universe,
     debug: bool,
+    thread_count: i32,
+    config: Box<ConstellationConfiguration>,
 }
 
 impl ConstellationTrait for MultiThreadedConstellation {
@@ -42,28 +43,60 @@ impl ConstellationTrait for MultiThreadedConstellation {
             if self.debug {
                 info!("Activating Multi Threaded Constellation");
             }
-            for x in 0..self.inner_constellation_vec.len() {
-                let mut work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
-                let mut event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
 
-                if let Some(inner) = self.inner_constellation_vec[x]
+            // Queues used for threads to share events/activities with thread handler
+            let activities_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
+            let events_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
+
+            // Shared between all threads, to generate unique activity IDs
+            let activity_counter= Arc::new(Mutex::new(0));
+
+            let mut thread_handler = MultiThreadHelper::new(self.debug, activities_from_threads.clone(), events_from_threads.clone());
+
+            for i in 0..self.thread_count {
+                let executor_queues = ExecutorQueues::new(&self.universe, activity_counter.clone(), i);
+
+                // This struct links the activities and events passed through the functions "submit" and "send" to the thread_handler
+                let helper = ThreadHelper::new(activities_from_threads.clone(), events_from_threads.clone());
+
+                let inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>> = Arc::new(Mutex::new(Box::new(InnerConstellation::new_multithreaded(
+                    &self.config,
+                    executor_queues.const_id.clone(),
+                    helper,
+                    executor_queues.activities.clone(),
+                    executor_queues.activities_suspended.clone(),
+                    executor_queues.event_queue.clone(),
+                    i,
+                ))));
+
+                if let Some(inner) = inner_constellation
                     .lock()
                     .unwrap()
-                    .downcast_ref::<InnerConstellation>()
-                {
-                    work_queue = inner.work_queue.clone();
-                    event_queue = inner.event_queue.clone();
-                } else {
-                    panic!("Something went wrong when cloning the work and event queue")
-                };
+                    .downcast_mut::<InnerConstellation>() {
+                    inner.activate_inner(inner_constellation.clone());
+                }
 
-                self.inner_constellation_vec[x]
-                    .lock()
-                    .unwrap()
-                    .downcast_mut::<InnerConstellation>()
-                    .unwrap()
-                    .activate_inner(self.inner_constellation_vec[x].clone(), work_queue, event_queue);
+
+                thread_handler.push(executor_queues, inner_constellation.clone());
             }
+
+            // TODO Store these inside multi_threaded_constellation as well
+            let (s, r): (Sender<bool>, Receiver<bool>) = unbounded();
+            let (s2, r2): (Sender<bool>, Receiver<bool>) = unbounded();
+
+
+            let mut inner_handler = thread_handler.clone();
+
+
+            // Start multi thread handler, this function will periodically
+            // check for new activities/events, try to steal events from other nodes
+            // and perform load-balancing.
+            thread::spawn(move || {
+                inner_handler.run(r, s2);
+            });
+
+            self.thread_handler = Some(thread_handler);
+            self.signal_thread_handler = Some((s, r2));
 
             return Ok(true);
         }
@@ -78,11 +111,11 @@ impl ConstellationTrait for MultiThreadedConstellation {
         may_be_stolen: bool,
         expects_events: bool,
     ) -> ActivityIdentifier {
-        self.inner_constellation_vec[0].lock().unwrap().submit(activity, context, may_be_stolen, expects_events)
+        self.thread_handler.as_mut().unwrap().submit(activity, context, may_be_stolen, expects_events)
     }
 
     fn send(&mut self, e: Box<Event>) {
-        self.inner_constellation_vec[0].lock().unwrap().send(e)
+        self.thread_handler.as_mut().unwrap().send(e);
     }
 
     fn done(&mut self) -> Result<bool, ConstellationError> {
@@ -90,20 +123,38 @@ impl ConstellationTrait for MultiThreadedConstellation {
             info!("Attempting to shut down Constellation gracefully");
         }
 
-        for x in 0..self.inner_constellation_vec.len() {
-            if !self.inner_constellation_vec[x].lock().expect(
-                "Could not get lock on constellation instance"
-            ).done().unwrap() {
-                warn!("Thread {} was not done, aborting shutdown", x);
-                return Ok(false);
+        let inner = self.thread_handler.as_mut().unwrap().done();
+
+        if inner.is_ok() {
+            info!("All threads were shutdown successfully");
+
+            // All threads were shutdown ok
+            if *inner.as_ref().unwrap() {
+                // Shut down thread_handler
+                self.signal_thread_handler.as_ref().unwrap().0.send(true).expect("Failed to send signal to load balancer");
+
+                let time = time::Duration::from_secs(100);
+                if self.debug {
+                    info!("Waiting for {}s for load balancer to shut down", 100);
+                }
+                if let Ok(r) = self.signal_thread_handler.as_ref().unwrap().1.recv_timeout(time) {
+                    if !r {
+                        warn!("Something went wrong shutting down the load balancer");
+                        return Err(ConstellationError);
+                    }
+                } else {
+                    warn!("Timeout waiting for the load balancer to shutdown");
+                    return Err(ConstellationError);
+                }
+                info!("Load balancer successfully shutdown");
             }
         }
 
-        Ok(true)
+        inner
     }
 
     fn identifier(&mut self) -> ConstellationIdentifier {
-        unimplemented!()
+        unimplemented!();
     }
 
     fn is_master(&mut self) -> Result<bool, ConstellationError> {
@@ -114,39 +165,20 @@ impl ConstellationTrait for MultiThreadedConstellation {
         mpi_info::size(&self.universe)
     }
 
-    fn set_parent(&mut self, parent: Arc<Mutex<Box<dyn ConstellationTrait>>>){
+    fn set_parent(&mut self, _parent: Arc<Mutex<Box<dyn ConstellationTrait>>>){
         unimplemented!();
     }
 }
 
 impl MultiThreadedConstellation {
-
-    /// Create
     pub fn new(config: Box<ConstellationConfiguration>) -> MultiThreadedConstellation {
-        // Start all single threaded constellation instances, i.e.
-        // InnerConstellation
-
-        let mut const_vec: Vec<Arc<Mutex<Box<dyn ConstellationTrait>>>> = Vec::new();
-        let universe = mpi::initialize().unwrap();
-        if mpi_info::master(&universe) {
-            // Only start up inner constellation instances for the master
-            for x in 0..config.number_of_threads {
-                const_vec.push(SingleThreadConstellation::create_only_inner(config.clone(), &universe, x));
-            }
+        MultiThreadedConstellation {
+            thread_handler: None,
+            signal_thread_handler: None,
+            universe: mpi::initialize().unwrap(),
+            debug: config.debug,
+            thread_count: config.number_of_threads,
+            config
         }
-
-        let multi = MultiThreadedConstellation {
-            inner_constellation_vec: const_vec,
-            local_work: HashMap::new(),
-            universe,
-            debug: false
-        };
-
-        for inner in &multi.inner_constellation_vec {
-            let inner_clone = inner.clone();
-            inner.lock().unwrap().set_parent(inner_clone);
-        }
-
-        multi
     }
 }

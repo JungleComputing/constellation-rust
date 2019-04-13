@@ -19,6 +19,9 @@ use crossbeam::{unbounded, Receiver, Sender};
 use mpi::environment::Universe;
 use std::thread;
 use std::time;
+use hashbrown::HashMap;
+use crate::implementation::thread_helper::ThreadHelper;
+use crate::implementation::event_queue::EventQueue;
 
 /// This data structure is used in order to share a constellation instance
 /// between both the Executor and SingleThreadedConstellation (initiated by
@@ -30,21 +33,34 @@ use std::time;
 /// # Members
 /// * `identifier` - Identifier for this constellation instance, must be
 /// protected with mutex since it contains dynamic methods for ID generation
-/// * `work_queue` - Queue used to share activities with the executor thread
-/// * `work_queue_remote` - Work queue containing all activities which have
+/// * `debug` - Bool indicating whether to print debug messages
+/// * `nodes` - Number of nodes in running constellation instance
+/// * `context_vec` - Vector of contexts, indicating which activities to execute
+/// on this thread
+/// * `executor` - The thread actually processing submitted activities
+/// * `multi_threaded` - used to indicate whether this instance is running on
+/// multiple threads or not. If yes, the suspended queues will be linked with
+/// the parent instance.
+/// * `work_queue` - WorkQueue used to share activities with the executor thread
+/// * `work_queue_suspended` - Work queue containing data which gets suspended
+/// by thread
+/// * `work_queue_wrong_context` - Work queue containing all activities which have
 /// context not existing locally
+/// * `work_queue_parent` - Queue used to push work to parent when the regular
+/// work_queue is full.
 /// * `event_queue` - Queue used to share events with the executor thread
-/// * `parent` - Possible parent constellation instance, used in multithreading
 pub struct InnerConstellation {
     identifier: Arc<Mutex<ConstellationIdentifier>>,
     debug: bool,
     nodes: i32,
     context_vec: ContextVec,
     executor: Option<ThreadHandler>,
-    pub work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    pub work_queue_remote: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    pub event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
-    pub parent: Option<Arc<Mutex<Box<dyn ConstellationTrait>>>>,
+    multi_threaded: bool,
+    parent: Option<ThreadHelper>,
+    thread_id: i32,
+    pub work_queue: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    pub work_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    pub event_queue: Arc<Mutex<EventQueue>>,
 }
 
 impl ConstellationTrait for InnerConstellation {
@@ -69,23 +85,17 @@ impl ConstellationTrait for InnerConstellation {
         let activity_id = activity_wrapper.activity_identifier().clone();
 
         if self.debug {
-            info!("Submitting activity with ID: {}", &activity_id);
+            info!("Submitting activity with id: {}", &activity_id);
         }
 
-        // Check context
-        if self.context_vec.contains(context) {
-            // Insert ActivityWrapper in injector_queue
-            self.work_queue
-                .lock()
-                .expect("Could not get lock on injector_queue, failed to push activity")
-                .push(activity_wrapper);
-        } else {
-            // Let multithreaded constellation handle this activity
-            self.work_queue_remote
-                .lock()
-                .expect("Could not get lock on remote work queue")
-                .push(activity_wrapper);
+        if !self.multi_threaded {
+            self.work_queue.lock().unwrap().insert(activity_id.clone(), activity_wrapper);
+            return activity_id;
         }
+
+        self.parent.as_mut().expect(
+            "Found no parent, make sure to set a ThreadHandler"
+        ).submit(activity_wrapper);
 
         activity_id
     }
@@ -99,10 +109,33 @@ impl ConstellationTrait for InnerConstellation {
             info!("Send Event: {} -> {}", e.get_src(), e.get_dst());
         }
 
-        self.event_queue
-            .lock()
-            .expect("Could not get lock on event queue")
-            .push(e);
+        let aid = e.get_dst();
+
+        // Running single threaded instance
+        if !self.multi_threaded {
+            self.event_queue.lock().unwrap().insert(aid, e);
+            return;
+        }
+
+        // Check if we already have the corresponding activity
+        let mut exists =  self.work_queue.lock().unwrap().contains_key(&aid);
+        if exists {
+            self.event_queue.lock().unwrap().insert(aid, e);
+            return;
+        }
+
+        // Check if we have it in the suspended queue
+        exists = self.work_suspended.lock().unwrap().contains_key(&aid);
+        if exists {
+            self.event_queue.lock().unwrap().insert(aid, e);
+            return;
+        }
+
+        // Let parent deal with event, perhaps some other thread has the
+        // activity
+        self.parent.as_mut().expect(
+            "No existing parent, make sure to set a ThreadHandler"
+        ).send(e);
     }
 
     /// Returns whether the work_queue and event_queue are BOTH empty
@@ -115,7 +148,9 @@ impl ConstellationTrait for InnerConstellation {
         // Check if we still have activities running
         match self.work_left() {
             true => {
-                return Err(ConstellationError);
+                let (w, w_s) = (self.work_queue.lock().unwrap().len(), self.work_suspended.lock().unwrap().len());
+                warn!("Found work left in thread: {}, work_queue len: {}, work_suspended len: {}", self.thread_id, w, w_s);
+                return Ok(false);
             }
             _ => (),
         }
@@ -127,21 +162,23 @@ impl ConstellationTrait for InnerConstellation {
             .send(true)
             .expect("Failed to send signal to executor");
 
-        let time = time::Duration::from_secs(10);
+        let time = time::Duration::from_secs(100);
         if self.debug {
-            info!("Waiting for {}s for executor thread with id: {} to shut down", 10, self.identifier.lock().unwrap());
+            info!("Waiting for {}s for executor thread with id: {} to shut down", 100, self.identifier.lock().unwrap());
         }
 
         if let Ok(r) = handler.receiver.recv_timeout(time) {
             if !r {
-                warn!("Executor thread has activities or events to process");
-                return Err(ConstellationError);
+                warn!("Executor thread signals that there is work left");
+                let (w, w_s) = (self.work_queue.lock().unwrap().len(), self.work_suspended.lock().unwrap().len());
+                warn!("Work in thread: {}, work_queue len: {}, work_suspended len: {}", self.thread_id, w, w_s);
+                return Ok(false);
             }
         } else {
-            warn!("Timeout waiting for the executor thread to shutdown");
+            warn!("Timeout waiting for the executor thread to shutdown, something is wrong");
             return Err(ConstellationError);
         }
-        info!("Shutdown successful");
+
         Ok(true)
     }
 
@@ -161,45 +198,60 @@ impl ConstellationTrait for InnerConstellation {
     }
 
     fn set_parent(&mut self, parent: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
-        self.parent = Some(parent.clone());
+        unimplemented!();
     }
 }
 
 impl InnerConstellation {
-    pub fn new(config: &Box<ConstellationConfiguration>, universe: &Universe, thread_id: i32) -> InnerConstellation {
+    pub fn new(config: &Box<ConstellationConfiguration>, universe: &Universe, activity_counter: Arc<Mutex<u64>>, thread_id: i32) -> InnerConstellation {
         InnerConstellation {
-            identifier: Arc::new(Mutex::new(ConstellationIdentifier::new(universe, thread_id))),
+            identifier: Arc::new(Mutex::new(ConstellationIdentifier::new(universe, activity_counter, thread_id))),
             debug: config.debug,
             nodes: config.number_of_nodes,
             context_vec: config.context_vec.clone(),
             executor: None,
-            work_queue: Arc::from(Mutex::from(deque::Injector::new())),
-            work_queue_remote: Arc::new(Mutex::new(deque::Injector::new())),
-            event_queue: Arc::from(Mutex::from(deque::Injector::new())),
+            multi_threaded: false,
             parent: None,
+            thread_id,
+            work_queue: Arc::new(Mutex::new(HashMap::new())),
+            work_suspended: Arc::new(Mutex::new(HashMap::new())),
+            event_queue: Arc::from(Mutex::from(EventQueue::new())),
         }
     }
 
-    pub fn new_multithreaded(config: &Box<ConstellationConfiguration>, _: i32) -> InnerConstellation {
+    pub fn new_multithreaded(config: &Box<ConstellationConfiguration>,
+                             identifier: Arc<Mutex<ConstellationIdentifier>>,
+                             parent: ThreadHelper,
+                             work_queue: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+                             work_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+                             event_queue: Arc<Mutex<EventQueue>>,
+                             thread_id: i32,
+
+    ) -> InnerConstellation {
         InnerConstellation {
-            identifier: Arc::new(Mutex::new(ConstellationIdentifier::new_empty())),
+            identifier,
             debug: config.debug,
             nodes: config.number_of_nodes,
             context_vec: config.context_vec.clone(),
             executor: None,
-            work_queue: Arc::from(Mutex::from(deque::Injector::new())),
-            work_queue_remote: Arc::new(Mutex::new(deque::Injector::new())),
-            event_queue: Arc::from(Mutex::from(deque::Injector::new())),
-            parent: None, // NO IDENTIFIER SET HERE
+            multi_threaded: true,
+            parent: Some(parent),
+            thread_id,
+            work_queue,
+            work_suspended,
+            event_queue,
         }
     }
+
 
     /// Check if there is work left in the queues
     ///
     /// # Returns
     /// * `bool` - True if there is work in at least one queue, false otherwise
     pub fn work_left(&mut self) -> bool{
-        if self.work_queue.lock().unwrap().is_empty() && self.event_queue.lock().unwrap().is_empty()
+        if self.work_queue.lock().unwrap().is_empty()
+            && self.work_suspended.lock().unwrap().is_empty()
+            && self.event_queue.lock().unwrap().is_empty()
         {
             return false;
         }
@@ -212,34 +264,33 @@ impl InnerConstellation {
     /// # Arguments
     /// * `inner_constellation` - An Arc<Mutex<..>> reference to the
     /// constellation instance on which THIS method was called.
-    /// * `work_queue` - The work_queue which will be used for sharing
-    /// activities between ExecutorThread and InnerConstellation
-    /// * `event_queue` - Shared event queue between ExecutorThread and
-    /// InnerConstellation
     pub fn activate_inner(
         &mut self,
         inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
-        work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-        event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
     ){
         let (s, r): (Sender<bool>, Receiver<bool>) = unbounded();
         let (s2, r2): (Sender<bool>, Receiver<bool>) = unbounded();
 
+        let inner_work_queue = self.work_queue.clone();
+        let inner_work_suspended = self.work_suspended.clone();
+        let inner_event_queue = self.event_queue.clone();
+        let id = self.thread_id;
+
         // Start executor thread, it will keep running until shut down by
         // Constellation
         thread::spawn(move || {
-            // Start checking periodically for work
-            let local_work_queue = work_queue;
-            let local_event_queue = event_queue;
-
             let mut executor = ExecutorThread::new(
-                local_work_queue,
-                local_event_queue,
+                inner_work_queue,
+                inner_work_suspended,
+                inner_event_queue,
                 inner_constellation,
                 r,
                 s2,
+                id,
             );
+
             executor.run();
+
         });
 
         self.executor = Some(ThreadHandler::new(r2, s));

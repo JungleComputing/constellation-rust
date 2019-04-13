@@ -5,3 +5,5 @@ pub mod communication;
 pub mod error;
 pub mod multi_threaded_constellation;
 pub mod single_threaded_constellation;
+pub mod thread_helper;
+pub mod event_queue;

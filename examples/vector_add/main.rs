@@ -15,6 +15,7 @@ use constellation_rust::context::Context;
 use constellation_rust::context::ContextVec;
 use constellation_rust::{activity, SingleEventCollector};
 use constellation_rust::{constellation_config, steal_strategy};
+use std::time::Instant;
 
 mod compute_activity;
 mod context;
@@ -177,6 +178,8 @@ fn main() {
 
     if constellation.is_master().unwrap() {
         // Execute vector add for the given length on the constellation instance
+        let now = Instant::now();
         run(constellation, array_length);
+        println!("\n\nExecution took: {}s", now.elapsed().as_secs());
     }
 }

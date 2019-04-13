@@ -8,7 +8,7 @@ use crate::constellation_identifier::ConstellationIdentifier;
 use crate::context::Context;
 use crate::event::Event;
 
-pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display {
+pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display + mopa::Any {
     fn activity_identifier(&self) -> &ActivityIdentifier;
     fn expects_event(&self) -> bool;
     fn may_be_stolen(&self) -> bool;
@@ -144,3 +144,5 @@ impl fmt::Display for ActivityWrapper {
         )
     }
 }
+
+mopafy!(ActivityWrapperTrait);

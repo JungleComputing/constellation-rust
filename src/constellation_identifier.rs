@@ -4,6 +4,7 @@ use mpi::topology::Communicator;
 use mpi::topology::Rank;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::{Mutex, Arc};
 
 #[derive(Debug)]
 pub struct ConstellationIdentifier {
@@ -11,7 +12,7 @@ pub struct ConstellationIdentifier {
     pub node_info: node_handler::NodeHandler,
     pub group: HashMap<Rank, node_handler::NodeHandler>, // All processes and their node information
     pub thread_id: i32,
-    activity_counter: u64,
+    activity_counter: Arc<Mutex<u64>>, // Shared between all threads
 }
 
 impl ConstellationIdentifier {
@@ -21,7 +22,7 @@ impl ConstellationIdentifier {
     ///
     /// # Returns
     /// * `ConstellationIdentifier` - Unique ID for each thread on each node
-    pub fn new(universe: &Universe, thread_id: i32) -> ConstellationIdentifier {
+    pub fn new(universe: &Universe, activity_counter: Arc<Mutex<u64>>, thread_id: i32) -> ConstellationIdentifier {
         let world = universe.world();
         let rank = world.rank();
 
@@ -34,7 +35,7 @@ impl ConstellationIdentifier {
             },
             group: HashMap::new(),
             thread_id,
-            activity_counter: 0,
+            activity_counter,
         };
 
         // Create mpi groups to track processes on each node
@@ -54,14 +55,17 @@ impl ConstellationIdentifier {
             },
             group: HashMap::new(),
             thread_id: 0,
-            activity_counter: 0,
+            activity_counter: Arc::new(Mutex::new(0)),
         }
     }
 
     pub fn generate_activity_id(&mut self) -> u64 {
-        let ret = self.activity_counter;
-        self.activity_counter += 1;
+        let mut guard = self.activity_counter.lock().unwrap();
 
+        let ret = guard.clone();
+        *guard += 1;
+
+        drop(guard);
         ret
     }
 
@@ -90,7 +94,7 @@ impl Clone for ConstellationIdentifier {
             node_info: self.node_info.clone(),
             group: HashMap::new(),
             thread_id: self.thread_id,
-            activity_counter: 0,
+            activity_counter: self.activity_counter.clone(),
         }
     }
 }

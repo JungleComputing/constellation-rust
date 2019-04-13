@@ -47,28 +47,12 @@ impl ConstellationTrait for SingleThreadConstellation {
             if self.debug {
                 info!("Activating Single Threaded Constellation");
             }
-
-            let mut work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>;
-            let mut event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>;
-
-            if let Some(inner) = self
-                .inner_constellation
-                .lock()
-                .unwrap()
-                .downcast_ref::<InnerConstellation>()
-            {
-                work_queue = inner.work_queue.clone();
-                event_queue = inner.event_queue.clone();
-            } else {
-                panic!("Something went wrong when cloning the work and event queue")
-            };
-
             self.inner_constellation
                 .lock()
                 .unwrap()
                 .downcast_mut::<InnerConstellation>()
                 .unwrap()
-                .activate_inner(self.inner_constellation.clone(), work_queue, event_queue);
+                .activate_inner(self.inner_constellation.clone());
 
             return Ok(true);
         }
@@ -182,21 +166,9 @@ impl SingleThreadConstellation {
         let universe = mpi::initialize().unwrap();
 
         SingleThreadConstellation {
-            inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(&config, &universe, 0)))),
+            inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(&config, &universe, Arc::new(Mutex::new(0)), 0)))),
             universe,
             debug: config.debug,
         }
-    }
-
-    pub fn create_only_inner(config: Box<ConstellationConfiguration>, universe: &Universe, thread_id: i32) -> Arc<Mutex<Box<dyn ConstellationTrait>>> {
-        if config.debug {
-            info!("Creating thread..");
-        }
-
-        let inner_constellation = InnerConstellation::new(&config, universe, thread_id);
-
-        let result: Arc<Mutex<Box<dyn ConstellationTrait>>> = Arc::new(Mutex::new(Box::new(inner_constellation)));
-
-        result
     }
 }

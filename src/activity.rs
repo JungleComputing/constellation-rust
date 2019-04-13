@@ -29,7 +29,7 @@ pub enum State {
 /// See util/activities/ for various activities which may come in handy
 /// See examples/ for some examples of what self-made activities may
 /// look like
-pub trait ActivityTrait: Sync + Send {
+pub trait ActivityTrait: Sync + Send + mopa::Any {
     fn cleanup(&mut self, constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>);
     fn initialize(
         &mut self,
@@ -43,3 +43,5 @@ pub trait ActivityTrait: Sync + Send {
         id: &ActivityIdentifier,
     ) -> State;
 }
+
+mopafy!(ActivityTrait);

@@ -9,10 +9,14 @@ use crate::activity_identifier::ActivityIdentifier;
 use crate::constellation::ConstellationTrait;
 use crate::event::Event;
 
-use crossbeam::deque;
 use crossbeam::deque::Steal;
 use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
+use crate::implementation::event_queue::EventQueue;
+
+// Timeout for trying to steal events from parent before checking suspended
+// queues
+const SLEEP_TIME: u64 = 100;
 
 /// The executor thread runs in asynchronously and is in charge of executing
 /// activities. It will periodically check for work/events in the Constellation
@@ -22,36 +26,41 @@ use hashbrown::HashMap;
 /// will start by immediately calling the process method (possibly again).
 ///
 /// # Members
+/// * `multi_threaded` - Boolean to indicate whether this executor is part of
+/// multi threaded constellation or not. Used to indicate whether suspended
+/// events should be pushed to parent or not.
 /// * `work_queue` - Shared queue with Constellation instance, used to grab
 /// work when available.
 /// * `local_work` - Local queue with work, stolen jobs get put here before
 /// executed, constellation can use this queue to load balance different
 /// executors.
-/// * `suspended_work` - Work which as been suspended (activity::State::suspend
+/// * `work_suspended` - Work which as been suspended (activity::State::suspend
 /// was returned). This activity is triggered by sending receiving an event.
 /// * `event_queue` - Shared queue for events containing data, executor will
 /// check this queue whenever if is expecting events
-/// * `events_waiting` - Events that have been received but have no activity
+/// * `event_suspended` - Events that have been received but have no activity
 /// on this thread
 /// * `constellation` - A reference to the InnerConstellation instance, required
 /// by the functions in the activities executed
 /// * `receiver` - Receiving channel used to get signals from parent
 /// * `sender` - Sending channel used to signal parent
 pub struct ExecutorThread {
-    work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-    local_work: deque::Worker<Box<dyn ActivityWrapperTrait>>,
-    suspended_work: HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>,
-    event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
-    events_waiting: HashMap<ActivityIdentifier, Box<Event>>,
+    work_queue: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    work_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    event_queue: Arc<Mutex<EventQueue>>,
     constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
     receiver: Receiver<bool>,
     sender: Sender<bool>,
+    thread_id: i32,
 }
 
 impl ExecutorThread {
     /// Create a new ExecutorThread
     ///
     /// # Arguments
+    /// * `multi_threaded` - Boolean indicating whether this executor is part
+    /// of multi threaded constellation or not. This is used to indicate
+    /// whether to push suspended events/activities to the parent or locally.
     /// * `work_queue` - Injector queue of ActivityWrapperTraits which
     /// is shared with constellation instance
     /// * `event_queue` - Same as work_queue but for events
@@ -62,21 +71,22 @@ impl ExecutorThread {
     /// * `ExecutorThread` - New executor thread which asynchronously processes
     /// events
     pub fn new(
-        work_queue: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-        event_queue: Arc<Mutex<deque::Injector<Box<Event>>>>,
+        work_queue: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+        work_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+        event_queue: Arc<Mutex<EventQueue>>,
         constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
         receiver: Receiver<bool>,
         sender: Sender<bool>,
+        thread_id: i32,
     ) -> ExecutorThread {
         ExecutorThread {
             work_queue,
-            local_work: deque::Worker::new_fifo(),
-            suspended_work: HashMap::new(),
+            work_suspended,
             event_queue,
-            events_waiting: HashMap::new(),
             constellation,
             receiver,
             sender,
+            thread_id
         }
     }
 
@@ -88,26 +98,33 @@ impl ExecutorThread {
     /// * `Option<Box<dyn ActivityWrapperTrait>>` - If there is work, it will
     /// pop one job from the local queue and return that wrapped in Some(..)
     fn check_for_work(&mut self) -> Option<Box<dyn ActivityWrapperTrait>> {
-        // Steal work from shared activity queue, if available
-        self.local_work.pop().or_else(|| {
-            if let Steal::Success(activity) = self
-                .work_queue
-                .lock()
-                .unwrap()
-                .steal_batch_and_pop(&self.local_work)
-            {
-                return Some(activity);
-            } else {
-                return None;
-            }
-        })
+        let mut guard = self.work_queue.lock().unwrap();
+        if guard.is_empty() {
+            drop(guard);
+            return None;
+        }
+
+        let mut key= None;
+        let mut activity: Option<Box<dyn ActivityWrapperTrait>> = None;
+
+        let mut it = guard.keys().take(1).map(|x|
+            key = Some(x.clone())
+        );
+        it.next();
+
+        if key.is_some() {
+            activity = guard.remove(&key.unwrap());
+        }
+        drop(guard);
+
+        activity
     }
 
     /// Executes a stolen activity. It starts with the initialize(..) function,
     /// continues with process(..) and ends with cleanup.
     ///
     /// If an activity function returns activity::State::suspend, it will add
-    /// the activity to the "suspended_work" queue and return. This activity
+    /// the activity to the "work_suspended" queue and return. This activity
     /// can then be re-activated by receiving an event.
     ///
     /// When an activity is re-activated with an event, it will start with
@@ -118,39 +135,30 @@ impl ExecutorThread {
     fn run_activity(&mut self, mut activity: Box<dyn ActivityWrapperTrait>) {
         let aid = activity.activity_identifier().clone();
 
-        let mut event: Option<Box<Event>> = None;
-
-        // Check if activity is expecting an event, check if event is received
-        if activity.expects_event() {
-            if self
-                .events_waiting
-                .contains_key(activity.activity_identifier())
-            {
-                event = Some(self.events_waiting.remove(&aid).unwrap());
-            } else {
-                self.suspended_work.insert(aid, activity);
-                return;
-            }
-        }
-
         // Initialize
         match activity.initialize(self.constellation.clone(), &aid) {
             activity::State::SUSPEND => {
                 // Activity must suspend, add to suspended queue and
                 // stop processing
-                self.suspended_work.insert(aid, activity);
+
+                self.work_suspended.lock().unwrap().insert(aid, activity);
                 return;
             }
             activity::State::FINISH => {}
         }
 
-        if event.is_some() {
-            self.process(activity, event);
-        } else {
-            // Check if we have an suspended event correlated to this activity
-            let e = self.events_waiting.remove(&aid);
-            self.process(activity, e);
+        // TODO, move this to the top
+        let mut event: Option<Box<Event>> = None;
+
+        if activity.expects_event() {
+            event = self.event_queue.lock().unwrap().remove(aid.clone());
+            if event.is_none() {
+                self.work_suspended.lock().unwrap().insert(aid, activity);
+                return;
+            }
         }
+
+        self.process(activity, event);
     }
 
     /// Start the process function on an activity and handle return value
@@ -163,7 +171,7 @@ impl ExecutorThread {
             activity::State::SUSPEND => {
                 // Activity must suspend, add to suspended queue and
                 // stop processing
-                self.suspended_work.insert(aid, activity);
+                self.work_suspended.lock().unwrap().insert(aid, activity);
                 return;
             }
             activity::State::FINISH => {
@@ -173,95 +181,55 @@ impl ExecutorThread {
         }
     }
 
-    /// Steal an event from "event_queue" which is shared with the
-    /// SingleThreadedConstellation instance. If an event is stolen,
-    /// it can proceed in two ways:
-    ///     - The executor has a suspended activity waiting for the event,
-    ///       the activity is re-activated with the event.
-    ///     - There is no matching activity, add the event to the shared
-    ///       "events_waiting" queue, it could be that the activity is somewhere
-    ///       else, or that it has not yet arrived.
-    fn steal_event(&mut self) -> bool {
-        let data = self
-            .event_queue
-            .lock()
-            .unwrap()
-            .steal()
-            .success()
-            .expect("Error occurred when stealing an Event");
-        let dst = data.get_dst();
-
-        if let Some(activity) = self.suspended_work.remove(&dst) {
-            assert_eq!(
-                activity.activity_identifier(),
-                &dst,
-                "The destination ID of the event does not match the src ID \
-                 of the suspended activity.\n{} - {}",
-                dst,
-                activity.activity_identifier()
-            );
-
-            self.process(activity, Some(data));
+    /// Returns whether there is something left in the queues
+    ///
+    /// # Returns
+    /// * `bool` - Boolean
+    ///     - true: There are remaining items
+    ///     - false: THere are no remaining items
+    pub fn queues_empty(&self) -> bool {
+        if self.work_queue.lock().unwrap().is_empty()
+            && self.work_suspended.lock().unwrap().is_empty()
+            && self.event_queue.lock().unwrap().is_empty()
+        {
             return true;
-        } else {
-            // Key was not in suspended list,
-            // store locally until activity is available
-            self.events_waiting.insert(dst, data);
-            return false;
         }
+
+        false
     }
 
-    /// Go through all waiting events and check if there is a suspended activity
-    /// waiting for any of them. If they match, the activity is immediately
-    /// processed.
-    fn find_activity_for_waiting_events(&mut self) {
-        let mut to_process: Vec<ActivityIdentifier> = Vec::new();
+    fn check_suspended_work(&mut self) {
+        let keys: Vec<ActivityIdentifier> = self.work_suspended.lock().unwrap().keys().map(|x| x.clone()).collect();
+        for key in keys {
+            let event = self.event_queue.lock().unwrap().remove(key.clone());
 
-        for key in self.events_waiting.keys() {
-            if self.suspended_work.contains_key(key) {
-                to_process.push(key.clone());
+            if event.is_some() {
+                // We have received the event!
+                let activity = self.work_suspended.lock().unwrap().remove(&key);
+                if activity.is_some() {
+                    self.process(activity.unwrap(), event);
+                } else {
+                    // For thread safety
+                    self.event_queue.lock().unwrap().insert(key, event.unwrap());
+                }
             }
-        }
-
-        for key in to_process {
-            let activity = self.suspended_work.remove(&key).unwrap();
-
-            assert_eq!(
-                activity.activity_identifier(),
-                &key,
-                "The destination ID of the event does not match the src ID \
-                 of the suspended activity.\n{} - {}",
-                key,
-                activity.activity_identifier()
-            );
-
-            let event = self.events_waiting.remove(&key);
-
-            self.process(activity, event);
         }
     }
 
     /// This will startup the thread, periodically check for work forever or
-    /// if shut down from InnerConstellation/SingleThreadedConstellation.
+    /// if shut down from parent Constellation.
     pub fn run(&mut self) {
         // Wait for signal for 10 microseconds before proceeding
-        let time = time::Duration::from_micros(10);
+        let time = time::Duration::from_micros(SLEEP_TIME);
 
         loop {
-            // Check for events from parent
-            if !self.event_queue.lock().unwrap().is_empty() {
+            // Check if we have received event for work
+            if !self.work_suspended.lock().unwrap().is_empty() {
                 // Process event
-                self.steal_event();
-                continue;
+                self.check_suspended_work();
             }
 
-            // Check queue of suspended events, if we have the matching activity
-            if !self.events_waiting.is_empty() {
-                self.find_activity_for_waiting_events();
-                continue;
-            }
-
-            // Check for work
+            // Check for fresh work
             match self.check_for_work() {
                 Some(x) => self.run_activity(x),
                 None => (),
@@ -288,22 +256,5 @@ impl ExecutorThread {
                 }
             }
         }
-    }
-
-    /// Returns whether there is something left in the queues
-    ///
-    /// # Returns
-    /// * `bool` - Boolean
-    ///     - true: There are remaining items
-    ///     - false: THere are no remaining items
-    pub fn queues_empty(&self) -> bool {
-        if self.local_work.is_empty()
-            && self.suspended_work.is_empty()
-            && self.events_waiting.is_empty()
-        {
-            return true;
-        }
-
-        false
     }
 }
