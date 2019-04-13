@@ -1,4 +1,4 @@
-///! Activity which receives the two arrays to add to each other from an event,
+///! Activity which receives two arrays to add to each other from an event,
 ///! checks whether they are smaller than the given threshold, if yes, computes
 ///! the result and returns it. If no, create two new activities and pass them
 ///! each half of the array.

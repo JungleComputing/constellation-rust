@@ -8,6 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+
+/// Single event collector is an activity which only waits for one event. The
+/// struct field event will be sent with this event upon receive.
+///
+/// # Members
+/// * `event` - Event will be set when this activity retrieves the event.
 pub struct SingleEventCollector {
     pub event: Option<Box<Event>>,
 }
@@ -50,6 +56,11 @@ impl SingleEventCollector {
         Arc::from(Mutex::from(SingleEventCollector { event: None }))
     }
 
+    /// Loop on the global field event and return it when it has a value
+    ///
+    /// # Arguments
+    /// * `sec` - The SingleEventCollector to check event on.
+    /// * `interval` - How often to check for the event
     pub fn get_event(sec: Arc<Mutex<SingleEventCollector>>, interval: Duration) -> Box<Event> {
         loop {
             let guard = sec.lock().unwrap();

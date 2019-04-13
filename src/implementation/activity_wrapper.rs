@@ -1,12 +1,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use crate::{ActivityTrait, ActivityIdentifier, ConstellationTrait, ConstellationIdentifier, Context, Event};
+use crate::activity::State;
 
-use crate::activity::{ActivityTrait, State};
-use crate::activity_identifier::ActivityIdentifier;
-use crate::constellation::ConstellationTrait;
-use crate::constellation_identifier::ConstellationIdentifier;
-use crate::context::Context;
-use crate::event::Event;
 
 pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display + mopa::Any {
     fn activity_identifier(&self) -> &ActivityIdentifier;

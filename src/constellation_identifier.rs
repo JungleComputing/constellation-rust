@@ -12,7 +12,7 @@ pub struct ConstellationIdentifier {
     pub node_info: node_handler::NodeHandler,
     pub group: HashMap<Rank, node_handler::NodeHandler>, // All processes and their node information
     pub thread_id: i32,
-    activity_counter: Arc<Mutex<u64>>, // Shared between all threads
+    pub activity_counter: Arc<Mutex<u64>>, // Shared between all threads
 }
 
 impl ConstellationIdentifier {

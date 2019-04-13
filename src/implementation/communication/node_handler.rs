@@ -1,3 +1,5 @@
+///! Stores information about all the nodes and their node names
+
 extern crate mpi;
 
 use mpi::collective::CommunicatorCollectives;
@@ -9,6 +11,7 @@ use std::collections::HashMap;
 
 /// Store node information
 ///
+/// # Members
 /// * `node_name` - The processor name, can be received with
 /// mpi::environment::processor_name() from one of the processes running on the node
 /// * `node_id` - An unique identifier for this node
@@ -24,9 +27,9 @@ pub struct NodeHandler {
 /// This method MUST be called from each MPI process.
 ///
 /// # Arguments
-/// * `&mut HashMap` - The HashMap to add node information to to, will be
+/// * `groups` - The HashMap to add node information to to, will be
 /// updated in place
-/// * `&Universe` - The Universe object from MPI, upon which MPI has already
+/// * `universe` - The Universe object from MPI, upon which MPI has already
 ///  been initialized
 pub fn create_groups(groups: &mut HashMap<Rank, NodeHandler>, universe: &Universe) {
     let world = universe.world();

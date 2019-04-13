@@ -1,27 +1,22 @@
 extern crate crossbeam;
 extern crate mpi;
 
-use std::sync::{Arc, Mutex};
-
-use crate::activity::ActivityTrait;
-use crate::activity_identifier::ActivityIdentifier;
-use crate::constellation::ConstellationTrait;
-use crate::constellation_config::ConstellationConfiguration;
-use crate::constellation_identifier::ConstellationIdentifier;
-use crate::context::{Context, ContextVec};
-use crate::event::Event;
-use crate::implementation::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
+use mpi::environment::Universe;
+use crate::{ConstellationConfiguration, Context, ContextVec, ActivityIdentifier, ActivityTrait, ConstellationIdentifier, ConstellationTrait, Event};
+use crate::implementation::event_queue::EventQueue;
+use crate::implementation::thread_helper::ThreadHelper;
+use crate::implementation::activity_wrapper::ActivityWrapperTrait;
 use crate::implementation::error::ConstellationError;
-use crate::implementation::single_threaded_constellation::executor_thread::ExecutorThread;
+use crate::implementation::activity_wrapper::ActivityWrapper;
+use crate::implementation::constellation_files::executor_thread::ExecutorThread;
+
+use std::thread;
+use std::time;
+use std::sync::{Arc, Mutex};
 
 use crossbeam::deque;
 use crossbeam::{unbounded, Receiver, Sender};
-use mpi::environment::Universe;
-use std::thread;
-use std::time;
 use hashbrown::HashMap;
-use crate::implementation::thread_helper::ThreadHelper;
-use crate::implementation::event_queue::EventQueue;
 
 /// This data structure is used in order to share a constellation instance
 /// between both the Executor and SingleThreadedConstellation (initiated by
@@ -195,10 +190,6 @@ impl ConstellationTrait for InnerConstellation {
 
     fn nodes(&mut self) -> i32 {
         self.nodes
-    }
-
-    fn set_parent(&mut self, parent: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
-        unimplemented!();
     }
 }
 

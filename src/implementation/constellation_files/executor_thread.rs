@@ -4,15 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time;
 
 use super::super::activity_wrapper::ActivityWrapperTrait;
-use crate::activity;
+use crate::{activity, activity_identifier, ConstellationTrait, Event};
 use crate::activity_identifier::ActivityIdentifier;
-use crate::constellation::ConstellationTrait;
-use crate::event::Event;
+use crate::implementation::event_queue::EventQueue;
 
 use crossbeam::deque::Steal;
 use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
-use crate::implementation::event_queue::EventQueue;
 
 // Timeout for trying to steal events from parent before checking suspended
 // queues

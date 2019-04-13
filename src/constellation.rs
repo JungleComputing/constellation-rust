@@ -57,8 +57,6 @@ pub trait ConstellationTrait: Sync + Send + mopa::Any {
     fn is_master(&mut self) -> Result<bool, ConstellationError>;
 
     fn nodes(&mut self) -> i32;
-
-    fn set_parent(&mut self, parent: Arc<Mutex<Box<dyn ConstellationTrait>>>);
 }
 
 mopafy!(ConstellationTrait);

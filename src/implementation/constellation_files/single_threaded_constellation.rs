@@ -7,13 +7,7 @@ use std::sync::{Arc, Mutex};
 use super::super::activity_wrapper::ActivityWrapperTrait;
 use super::super::error::ConstellationError;
 use super::inner_constellation::InnerConstellation;
-use crate::activity::ActivityTrait;
-use crate::activity_identifier::ActivityIdentifier;
-use crate::constellation::ConstellationTrait;
-use crate::constellation_config::ConstellationConfiguration;
-use crate::constellation_identifier::ConstellationIdentifier;
-use crate::context::Context;
-use crate::event::Event;
+use crate::{ActivityIdentifier, ConstellationTrait, ActivityTrait, Context, Event, ConstellationConfiguration, ConstellationIdentifier};
 
 use crossbeam::deque;
 use crate::implementation::communication::mpi_info;
@@ -107,6 +101,7 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// # Returns
     /// * `Result<bool, ConstellationError>` - Result type containing true if
     /// it could successfully shutdown, false otherwise.
+    ///
     /// Upon error a ConstellationError is returned
     fn done(&mut self) -> Result<bool, ConstellationError> {
         if self.debug {
@@ -145,10 +140,6 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// * `i32` - Number of nodes
     fn nodes(&mut self) -> i32 {
         self.inner_constellation.lock().unwrap().nodes()
-    }
-
-    fn set_parent(&mut self, _parent: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
-        unimplemented!();
     }
 }
 
