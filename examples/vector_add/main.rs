@@ -8,20 +8,22 @@ extern crate constellation_rust;
 use std::env;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use constellation_rust::constellation::ConstellationTrait;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
 use constellation_rust::context::ContextVec;
 use constellation_rust::{activity, SingleEventCollector};
-use constellation_rust::{constellation_config, steal_strategy};
-use std::time::Instant;
+use constellation_rust::{constellation_config};
+use constellation_rust::StealStrategy;
 
 mod compute_activity;
 mod context;
 mod payload;
 
 const THRESHOLD: i32 = 10;
+const TIME_BETWEEN_STEALS: u64 = 100; // Micro seconds
 
 /// Creates a SingleEventCollector and a ComputeActivity will will be the
 /// base of the vector add.
@@ -163,13 +165,13 @@ fn main() {
     });
 
     let const_config = constellation_config::ConstellationConfiguration::new(
-        steal_strategy::BIGGEST,
-        steal_strategy::BIGGEST,
-        steal_strategy::BIGGEST,
+        StealStrategy::BIGGEST,
+        StealStrategy::BIGGEST,
         nmr_nodes,
         nmr_threads,
         true,
         context_vec,
+        TIME_BETWEEN_STEALS,
     );
 
     let mut constellation = new_constellation(Mode::MultiThreaded, const_config);

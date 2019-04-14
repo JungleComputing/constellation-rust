@@ -1,3 +1,6 @@
+///! Use this struct to retrieve a ConstellationInstance, specify if you wish
+///! to run single/multi-threaded or distributed using the Mode enum.
+
 use crate::{ConstellationConfiguration, SingleThreadConstellation, MultiThreadedConstellation, ConstellationTrait};
 
 /// Use to specify which constellation instance to create

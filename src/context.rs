@@ -1,3 +1,9 @@
+///! Contexts are used to specify what activity should be executed where.
+///!
+///! When setting up constellation all nodes/threads receive a vector of
+///! contexts, they will then only execute activities that has one ore more
+///! matching contexts.
+
 use std::fmt;
 
 /// Holds any number of context, use to identify on which executor
@@ -33,7 +39,7 @@ impl ContextVec {
 
 impl fmt::Display for ContextVec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let tmp: &Vec<Context> = self.context_vec.as_ref(); //.into_iter().map(|x|x.label).collect();
+        let tmp: &Vec<Context> = self.context_vec.as_ref();
         let labels: Vec<String> = tmp.into_iter().map(|x| x.label.clone()).collect();
 
         write!(f, "context:{:?}", labels)

@@ -2,19 +2,18 @@ extern crate crossbeam;
 extern crate mpi;
 
 use mpi::environment::Universe;
-use crate::{ConstellationConfiguration, Context, ContextVec, ActivityIdentifier, ActivityTrait, ConstellationIdentifier, ConstellationTrait, Event};
+use crate::{ConstellationError, ConstellationConfiguration, Context, ContextVec, ActivityIdentifier, ActivityTrait, ConstellationTrait, Event};
 use crate::implementation::event_queue::EventQueue;
-use crate::implementation::thread_helper::ThreadHelper;
+use crate::implementation::constellation_files::thread_helper::ThreadHelper;
 use crate::implementation::activity_wrapper::ActivityWrapperTrait;
-use crate::implementation::error::ConstellationError;
 use crate::implementation::activity_wrapper::ActivityWrapper;
 use crate::implementation::constellation_files::executor_thread::ExecutorThread;
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
 
 use std::thread;
 use std::time;
 use std::sync::{Arc, Mutex};
 
-use crossbeam::deque;
 use crossbeam::{unbounded, Receiver, Sender};
 use hashbrown::HashMap;
 
@@ -36,13 +35,13 @@ use hashbrown::HashMap;
 /// * `multi_threaded` - used to indicate whether this instance is running on
 /// multiple threads or not. If yes, the suspended queues will be linked with
 /// the parent instance.
+/// * `parent` - A struct which is used for multi thread load balancing, call
+/// submit and send on this struct push the activity/event to the thread_handler
+/// * `thread_id` - The ID of the thread running this instance of `
+/// `InnerConstellation`
 /// * `work_queue` - WorkQueue used to share activities with the executor thread
-/// * `work_queue_suspended` - Work queue containing data which gets suspended
+/// * `work_suspended` - Work queue containing data which gets suspended
 /// by thread
-/// * `work_queue_wrong_context` - Work queue containing all activities which have
-/// context not existing locally
-/// * `work_queue_parent` - Queue used to push work to parent when the regular
-/// work_queue is full.
 /// * `event_queue` - Queue used to share events with the executor thread
 pub struct InnerConstellation {
     identifier: Arc<Mutex<ConstellationIdentifier>>,
@@ -184,7 +183,7 @@ impl ConstellationTrait for InnerConstellation {
             .clone()
     }
 
-    fn is_master(&mut self) -> Result<bool, ConstellationError> {
+    fn is_master(&self) -> Result<bool, ConstellationError> {
         panic!("This should never be called on the inner constellation instance");
     }
 

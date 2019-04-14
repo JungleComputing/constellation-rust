@@ -1,11 +1,16 @@
+///! Events are are used to transfer data between activities. It uses the struct
+///! Payload to carry the data, which can be user implemented as long as it
+///! extends the `PayloadTrait`. Events also carry information about the sending
+///! and receiving activities.
+
 use super::payload::PayloadTrait;
 use crate::activity_identifier::ActivityIdentifier;
 use std::fmt;
 
 /// Event type, used for passing information between activities
 ///
-/// * `src` - Holds the identifier of the src activity, this is set internally
-/// upon submitting an event and is therefor None before sending.
+/// # Members
+/// * `src` - Source activity identifier
 /// * `dst` - Destination activity identifier
 /// * `payload` - Data which should be communicated
 #[derive(Clone, Debug)]

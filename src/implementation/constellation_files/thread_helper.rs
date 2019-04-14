@@ -14,21 +14,21 @@
 ///! check threads for suspended activities and events to distribute evenly
 ///! across all threads.
 
-use super::mpi::environment::Universe;
-use crate::{ConstellationIdentifier, ActivityIdentifier, Event, ConstellationTrait, ActivityTrait, Context};
+use crate::{ActivityIdentifier, Event, ConstellationTrait, ActivityTrait, Context, ConstellationError};
 use crate::implementation::event_queue::EventQueue;
 use crate::implementation::activity_wrapper::{ActivityWrapperTrait, ActivityWrapper};
-use crate::implementation::error::ConstellationError;
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
 
 use std::sync::{Arc, Mutex};
 use std::time;
+use std::thread;
 
 use hashbrown::HashMap;
 use crossbeam::{Sender, Receiver, deque, deque::Steal};
 
 // Specifies how long to wait between stealing activities or events
 // from threads for load balancing purposes.
-const TIME_BETWEEN_CHECKS: u64 = 1000;
+const TIMEOUT: u64 = 10;
 
 /// Struct holding all queues related to one single thread.
 ///
@@ -47,7 +47,7 @@ pub struct ExecutorQueues {
 }
 
 impl ExecutorQueues {
-    pub fn new(universe: &Universe, constellation_identifier: Arc<Mutex<ConstellationIdentifier>>, thread_id: i32) -> ExecutorQueues {
+    pub fn new(constellation_identifier: Arc<Mutex<ConstellationIdentifier>>) -> ExecutorQueues {
         ExecutorQueues {
             const_id: constellation_identifier,
             activities: Arc::new(Mutex::new(HashMap::new())),
@@ -117,7 +117,7 @@ impl ThreadHelper {
 #[derive(Clone)]
 pub struct MultiThreadHelper {
     pub threads:  Vec<(Arc<Mutex<Box<dyn ConstellationTrait>>>, ExecutorQueues)>,
-    time_between_checks: time::Duration,
+    time_between_steals: time::Duration,
     debug: bool,
     activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
     events_from_threads: Arc<Mutex<deque::Injector<Box<Event>>>>,
@@ -136,42 +136,15 @@ impl MultiThreadHelper {
     pub fn new(debug: bool,
                activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
                events_from_threads: Arc<Mutex<deque::Injector<Box<Event>>>>,
+               time_between_steals: u64,
     ) -> MultiThreadHelper {
         MultiThreadHelper {
             threads: Vec::new(),
-            time_between_checks: time::Duration::from_micros(TIME_BETWEEN_CHECKS),
+            time_between_steals: time::Duration::from_micros(time_between_steals),
             debug,
             activities_from_threads,
             events_from_threads,
             local_events: Arc::new(Mutex::new(EventQueue::new())),
-        }
-    }
-
-    /// Create a new instance from an already existing vector of threads.
-    ///
-    /// # Arguments
-    /// * `debug` - Boolean indicating whether to print debug messages or not
-    /// * `threads` - Vector of tuples containing `InnerConstellation` reference
-    /// and `ExecutorQueues` for each thread
-    /// * `activities_from_threads` - Activities passed on from threads,
-    /// should be shared with the ThreadHelper
-    /// * `events_from_threads` - Events passed on from threads, should be shared
-    /// with the ThreadHelper
-    /// * `local_events` - Reference to a Injector queue containing local events
-    /// (shared between all threads).
-    pub fn new_from_vec(debug: bool,
-                        threads:  Vec<(Arc<Mutex<Box<dyn ConstellationTrait>>>, ExecutorQueues)>,
-                        activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-                        events_from_threads: Arc<Mutex<deque::Injector<Box<Event>>>>,
-                        local_events: Arc<Mutex<EventQueue>>,
-    ) -> MultiThreadHelper {
-        MultiThreadHelper {
-            threads,
-            time_between_checks: time::Duration::from_micros(TIME_BETWEEN_CHECKS),
-            debug,
-            activities_from_threads,
-            events_from_threads,
-            local_events
         }
     }
 
@@ -186,10 +159,6 @@ impl MultiThreadHelper {
         self.threads.push((constellation, executor_queues));
     }
 
-    pub fn set_interval_time(&mut self, time: time::Duration) {
-        self.time_between_checks = time;
-    }
-
     /// Periodically checks for events from the queues which should be shared
     /// with all threads using the ThreadHelper struct. This should be run
     /// in a separate thread.
@@ -201,6 +170,8 @@ impl MultiThreadHelper {
     /// * `receiver` - The receiving channel for this thread
     /// * `sender` - The sending channel for this thread
     pub fn run(&mut self, receiver: Receiver<bool>, sender: Sender<bool>) {
+        let timeout = time::Duration::from_micros(TIMEOUT);
+
         loop {
             // Check for events from threads
             if !self.events_from_threads.lock().unwrap().is_empty() {
@@ -213,7 +184,7 @@ impl MultiThreadHelper {
             }
 
             // Check for signal to shut down
-            if let Ok(val) = receiver.recv_timeout(self.time_between_checks) {
+            if let Ok(val) = receiver.recv_timeout(timeout) {
                 if val {
                     // Signal that we are shutting down
                     sender.send(true).expect(
@@ -223,6 +194,9 @@ impl MultiThreadHelper {
                     return; // Shutdown thread
                 }
             }
+
+            // Sleep for the given time
+            thread::sleep(self.time_between_steals);
         }
     }
 
@@ -336,14 +310,10 @@ impl MultiThreadHelper {
         for i in 0..self.threads.len() {
             if self.threads[i].1.activities.lock().unwrap().contains_key(&key) ||
                 self.threads[i].1.activities_suspended.lock().unwrap().contains_key(&key) {
+
                 self.threads[i].1.event_queue.lock().unwrap().insert(key, event);
                 return;
             }
-        }
-
-
-        if self.debug {
-            info!(" to thread handler");
         }
 
         // Event does not exist in any activity yet, let it sit in our local
@@ -394,17 +364,22 @@ impl MultiThreadHelper {
         }
 
         let mut key = None;
-        let mut event: Option<Box<Event>> = None;
 
         let mut it = guard.keys().take(1).map(|x|
             key = Some(x.clone())
         );
         it.next();
 
-        if key.is_some() {
-            event = guard.remove(key.unwrap());
+        if !key.is_some() {
+            drop(guard);
+            return;
         }
+
+        let event = guard.remove(key.unwrap()).unwrap();
+
         drop(guard);
+
+        self.distribute_event(event);
     }
 
 

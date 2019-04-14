@@ -4,17 +4,16 @@ use std::sync::{Arc, Mutex};
 use std::time;
 
 use super::super::activity_wrapper::ActivityWrapperTrait;
-use crate::{activity, activity_identifier, ConstellationTrait, Event};
+use crate::{activity, ConstellationTrait, Event};
 use crate::activity_identifier::ActivityIdentifier;
 use crate::implementation::event_queue::EventQueue;
 
-use crossbeam::deque::Steal;
 use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
 
 // Timeout for trying to steal events from parent before checking suspended
 // queues
-const SLEEP_TIME: u64 = 100;
+const TIMEOUT_SIGNAL: u64 = 10;
 
 /// The executor thread runs in asynchronously and is in charge of executing
 /// activities. It will periodically check for work/events in the Constellation
@@ -24,24 +23,17 @@ const SLEEP_TIME: u64 = 100;
 /// will start by immediately calling the process method (possibly again).
 ///
 /// # Members
-/// * `multi_threaded` - Boolean to indicate whether this executor is part of
-/// multi threaded constellation or not. Used to indicate whether suspended
-/// events should be pushed to parent or not.
 /// * `work_queue` - Shared queue with Constellation instance, used to grab
 /// work when available.
-/// * `local_work` - Local queue with work, stolen jobs get put here before
-/// executed, constellation can use this queue to load balance different
-/// executors.
 /// * `work_suspended` - Work which as been suspended (activity::State::suspend
 /// was returned). This activity is triggered by sending receiving an event.
 /// * `event_queue` - Shared queue for events containing data, executor will
 /// check this queue whenever if is expecting events
-/// * `event_suspended` - Events that have been received but have no activity
-/// on this thread
 /// * `constellation` - A reference to the InnerConstellation instance, required
 /// by the functions in the activities executed
 /// * `receiver` - Receiving channel used to get signals from parent
 /// * `sender` - Sending channel used to signal parent
+/// * `thread_id` - Sending channel used to signal parent
 pub struct ExecutorThread {
     work_queue: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
     work_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
@@ -145,7 +137,6 @@ impl ExecutorThread {
             activity::State::FINISH => {}
         }
 
-        // TODO, move this to the top
         let mut event: Option<Box<Event>> = None;
 
         if activity.expects_event() {
@@ -218,7 +209,7 @@ impl ExecutorThread {
     /// if shut down from parent Constellation.
     pub fn run(&mut self) {
         // Wait for signal for 10 microseconds before proceeding
-        let time = time::Duration::from_micros(SLEEP_TIME);
+        let timeout = time::Duration::from_micros(TIMEOUT_SIGNAL);
 
         loop {
             // Check if we have received event for work
@@ -234,7 +225,7 @@ impl ExecutorThread {
             }
 
             // Check for signal to shut down
-            if let Ok(val) = self.receiver.recv_timeout(time) {
+            if let Ok(val) = self.receiver.recv_timeout(timeout) {
                 if val {
                     info!("Got signal to shutdown");
 

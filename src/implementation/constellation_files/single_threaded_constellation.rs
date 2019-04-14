@@ -2,22 +2,28 @@
 extern crate crossbeam;
 extern crate mpi;
 
-use std::sync::{Arc, Mutex};
-
-use super::super::activity_wrapper::ActivityWrapperTrait;
-use super::super::error::ConstellationError;
-use super::inner_constellation::InnerConstellation;
-use crate::{ActivityIdentifier, ConstellationTrait, ActivityTrait, Context, Event, ConstellationConfiguration, ConstellationIdentifier};
-
-use crossbeam::deque;
-use crate::implementation::communication::mpi_info;
 use mpi::environment::Universe;
+use super::inner_constellation::InnerConstellation;
+use crate::{ConstellationError, ActivityIdentifier, ConstellationTrait, ActivityTrait, Context, Event, ConstellationConfiguration};
+use crate::implementation::communication::mpi_info;
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
+
+
+use std::sync::{Arc, Mutex};
 
 /// A single threaded Constellation initializer, it creates an executor thread
 /// and a InnerConstellation object. The inner_constellation contains all
 /// logic related to Constellation (such as submitting activities etc).
 /// The only purpose of this wrapper is to initialize both threads and share
 /// the references between them.
+///
+/// # Members
+/// * `inner_constellation` - An Arc<Mutex<..>> reference to an
+/// InnerConstellation struct. This struct is shared with the executor thread
+/// in order for the executor to be able to submit/send events using the
+/// Constellation trait
+/// * `universe` - MPI Universe struct
+/// * `debug` - boolean indicating whether to display debug messages or not
 pub struct SingleThreadConstellation {
     inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
     universe: Universe,
@@ -126,7 +132,7 @@ impl ConstellationTrait for SingleThreadConstellation {
     /// * `Result<bool, ConstellationError` - Result type with the value true if
     /// this process is the leader, false otherwise.
     /// Will return ConstellationError if something went wrong.
-    fn is_master(&mut self) -> Result<bool, ConstellationError> {
+    fn is_master(&self) -> Result<bool, ConstellationError> {
         if mpi_info::rank(&self.universe) == 0 {
             Ok(true)
         } else {

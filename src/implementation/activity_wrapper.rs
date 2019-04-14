@@ -1,7 +1,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use crate::{ActivityTrait, ActivityIdentifier, ConstellationTrait, ConstellationIdentifier, Context, Event};
+use crate::{ActivityTrait, ActivityIdentifier, ConstellationTrait, Context, Event};
 use crate::activity::State;
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
 
 
 pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display + mopa::Any {
@@ -25,15 +26,12 @@ pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display + mop
 /// * `expects_events` - Indicates whether this activity expects events to
 /// complete
 /// * `activity` - A user defined activity to be executed in Constellation
-/// * `constellation_id` - A reference to an identifier, identifying this
-/// constellation instance.
 pub struct ActivityWrapper {
     id: ActivityIdentifier,
     may_be_stolen: bool,
     context: Context,
     expects_events: bool,
     activity: Arc<Mutex<dyn ActivityTrait>>,
-    constellation_id: Arc<Mutex<ConstellationIdentifier>>,
 }
 
 impl ActivityWrapperTrait for ActivityWrapper {
@@ -117,16 +115,12 @@ impl ActivityWrapper {
         may_be_stolen: bool,
         expects_events: bool,
     ) -> Box<ActivityWrapper> {
-        // Create a new reference to ConstellationIdentifier
-        let new_const_id = const_id.clone();
-
-        Box::from(ActivityWrapper {
+       Box::from(ActivityWrapper {
             id: ActivityIdentifier::new(const_id),
             context: (*context).clone(),
             may_be_stolen,
             expects_events,
             activity: activity.clone(), // Clone the reference
-            constellation_id: new_const_id,
         })
     }
 }

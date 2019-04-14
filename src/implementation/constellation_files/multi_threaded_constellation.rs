@@ -8,11 +8,11 @@
 ///! user called functions to the correct place in the handler
 
 use super::super::mpi::environment::Universe;
-use crate::{ConstellationIdentifier, ConstellationConfiguration, ConstellationTrait, ActivityTrait, Context, ActivityIdentifier, Event};
-use crate::implementation::thread_helper::{MultiThreadHelper, ThreadHelper, ExecutorQueues};
-use crate::implementation::error::ConstellationError;
+use crate::{ConstellationError, ConstellationConfiguration, ConstellationTrait, ActivityTrait, Context, ActivityIdentifier, Event};
+use crate::implementation::constellation_files::thread_helper::{MultiThreadHelper, ThreadHelper, ExecutorQueues};
 use crate::implementation::constellation_files::inner_constellation::InnerConstellation;
 use crate::implementation::communication::mpi_info;
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -69,10 +69,10 @@ impl ConstellationTrait for MultiThreadedConstellation {
             let activities_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
             let events_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
 
-            let mut thread_handler = MultiThreadHelper::new(self.debug, activities_from_threads.clone(), events_from_threads.clone());
+            let mut thread_handler = MultiThreadHelper::new(self.debug, activities_from_threads.clone(), events_from_threads.clone(), self.config.time_between_steals);
 
             for i in 0..self.thread_count {
-                let executor_queues = ExecutorQueues::new(&self.universe, Arc::new(Mutex::new(ConstellationIdentifier::new(&self.universe, self.const_id.activity_counter.clone(), i))), i);
+                let executor_queues = ExecutorQueues::new(Arc::new(Mutex::new(ConstellationIdentifier::new(&self.universe, self.const_id.activity_counter.clone(), i))));
 
                 // This struct links the activities and events passed through the functions "submit" and "send" to the thread_handler
                 let helper = ThreadHelper::new(activities_from_threads.clone(), events_from_threads.clone());
@@ -207,7 +207,7 @@ impl ConstellationTrait for MultiThreadedConstellation {
         self.const_id.clone()
     }
 
-    fn is_master(&mut self) -> Result<bool, ConstellationError> {
+    fn is_master(&self) -> Result<bool, ConstellationError> {
         Ok(mpi_info::master(&self.universe))
     }
 

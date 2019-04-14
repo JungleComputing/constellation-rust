@@ -14,9 +14,11 @@ use constellation_rust::context::{Context, ContextVec};
 use constellation_rust::event::Event;
 use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
 use constellation_rust::{activity, activity::ActivityTrait};
-use constellation_rust::{steal_strategy, SingleEventCollector};
+use constellation_rust::{SingleEventCollector};
+use constellation_rust::StealStrategy;
 
 const CONTEXT_LABEL: &str = "Hello_World";
+const TIME_BETWEEN_STEALS: u64 = 100; // Microseconds
 
 /// Payload struct for passing data between activities
 /*---------------------------------------------------------------------------*/
@@ -157,12 +159,12 @@ fn main() {
     });
 
     let const_config = constellation_config::ConstellationConfiguration::new_single_threaded(
-        steal_strategy::BIGGEST,
-        steal_strategy::BIGGEST,
-        steal_strategy::BIGGEST,
+        StealStrategy::BIGGEST,
+        StealStrategy::BIGGEST,
         nmr_nodes,
         true,
         context_vec,
+        TIME_BETWEEN_STEALS,
     );
 
     let mut constellation = new_constellation(Mode::SingleThreaded, const_config);
