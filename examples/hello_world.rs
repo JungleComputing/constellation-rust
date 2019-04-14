@@ -13,9 +13,9 @@ use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::{Context, ContextVec};
 use constellation_rust::event::Event;
 use constellation_rust::payload::{PayloadTrait, PayloadTraitClone};
-use constellation_rust::{activity, activity::ActivityTrait};
-use constellation_rust::{SingleEventCollector};
+use constellation_rust::SingleEventCollector;
 use constellation_rust::StealStrategy;
+use constellation_rust::{activity, activity::ActivityTrait};
 
 const CONTEXT_LABEL: &str = "Hello_World";
 const TIME_BETWEEN_STEALS: u64 = 100; // Microseconds

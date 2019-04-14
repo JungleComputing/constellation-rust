@@ -7,5 +7,5 @@
 #[derive(Clone)]
 pub enum StealStrategy {
     SMALLEST,
-    BIGGEST
+    BIGGEST,
 }

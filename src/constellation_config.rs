@@ -1,6 +1,5 @@
 ///! Configurations for constellation, modify the parameters to maximize
 ///! performance.
-
 use crate::context::ContextVec;
 use crate::StealStrategy;
 
@@ -25,7 +24,7 @@ pub struct ConstellationConfiguration {
     pub number_of_threads: i32,
     pub debug: bool,
     pub context_vec: ContextVec,
-    pub time_between_steals: u64
+    pub time_between_steals: u64,
 }
 
 impl ConstellationConfiguration {
@@ -52,7 +51,7 @@ impl ConstellationConfiguration {
         threads: i32,
         debug: bool,
         context_vec: ContextVec,
-        time_between_steals: u64
+        time_between_steals: u64,
     ) -> Box<ConstellationConfiguration> {
         //---------------------SET LOGGING--------------------------
         if debug {
@@ -92,14 +91,6 @@ impl ConstellationConfiguration {
         context_vec: ContextVec,
         time_between_steals: u64,
     ) -> Box<ConstellationConfiguration> {
-        ConstellationConfiguration::new(
-            lss,
-            rss,
-            nodes,
-            1,
-            debug,
-            context_vec,
-            time_between_steals,
-        )
+        ConstellationConfiguration::new(lss, rss, nodes, 1, debug, context_vec, time_between_steals)
     }
 }

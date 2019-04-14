@@ -1,5 +1,4 @@
 ///! Stores information about all the nodes and their node names
-
 extern crate mpi;
 
 use mpi::collective::CommunicatorCollectives;

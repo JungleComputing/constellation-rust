@@ -11,12 +11,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use constellation_rust::constellation::ConstellationTrait;
+use constellation_rust::constellation_config;
 use constellation_rust::constellation_factory::{new_constellation, Mode};
 use constellation_rust::context::Context;
 use constellation_rust::context::ContextVec;
-use constellation_rust::{activity, SingleEventCollector};
-use constellation_rust::{constellation_config};
 use constellation_rust::StealStrategy;
+use constellation_rust::{activity, SingleEventCollector};
 
 mod compute_activity;
 mod context;
@@ -117,7 +117,7 @@ fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
     }
 
     let result = constellation_vector_add(&mut constellation, vec1, vec2);
-     // Shut down constellation gracefully
+    // Shut down constellation gracefully
     constellation
         .done()
         .expect("Failed to shutdown constellation");
@@ -125,8 +125,8 @@ fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
     let length = if array_length < 40 { array_length } else { 40 };
     println!(
         "\n--------------------------------------------------------\
-     \nThe first {} elements in the resulting array are:\n{:?}\
-     \n--------------------------------------------------------",
+         \nThe first {} elements in the resulting array are:\n{:?}\
+         \n--------------------------------------------------------",
         length,
         &result[0..length as usize]
     );

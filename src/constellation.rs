@@ -1,14 +1,11 @@
 ///! Main module for Constellation, use for setting up a Constellation instance,
 ///! specifying properties and configurations. See SingleThreadedConstellation
 ///! and MultiThreadedConstellation for examples.
-
-
 use crate::error::ConstellationError;
-use crate::{ActivityTrait, Context, Event, ActivityIdentifier};
 use crate::implementation::constellation_identifier::ConstellationIdentifier;
+use crate::{ActivityIdentifier, ActivityTrait, Context, Event};
 
 use std::sync::{Arc, Mutex};
-
 
 /// Has to implement Sync and Send to be able to be shared in Arc<Mutex<..>>
 /// between threads. mopa::Any enables downcasting on the trait object.

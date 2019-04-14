@@ -1,3 +1,6 @@
+use crate::implementation::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
+use crate::implementation::event_queue::EventQueue;
 ///! Module for handling:
 ///! - Thread synchronization
 ///! - Load balancing
@@ -13,18 +16,16 @@
 ///! The `run` method should be started with a new thread, ìt will periodically
 ///! check threads for suspended activities and events to distribute evenly
 ///! across all threads.
-
-use crate::{ActivityIdentifier, Event, ConstellationTrait, ActivityTrait, Context, ConstellationError};
-use crate::implementation::event_queue::EventQueue;
-use crate::implementation::activity_wrapper::{ActivityWrapperTrait, ActivityWrapper};
-use crate::implementation::constellation_identifier::ConstellationIdentifier;
+use crate::{
+    ActivityIdentifier, ActivityTrait, ConstellationError, ConstellationTrait, Context, Event,
+};
 
 use std::sync::{Arc, Mutex};
-use std::time;
 use std::thread;
+use std::time;
 
+use crossbeam::{deque, deque::Steal, Receiver, Sender};
 use hashbrown::HashMap;
-use crossbeam::{Sender, Receiver, deque, deque::Steal};
 
 // Specifies how long to wait between stealing activities or events
 // from threads for load balancing purposes.
@@ -38,11 +39,12 @@ const TIMEOUT: u64 = 10;
 /// struct
 /// * `activities_suspended` - Suspended activities
 /// * `event_queue` - Event queue
-#[derive (Clone)]
+#[derive(Clone)]
 pub struct ExecutorQueues {
     pub const_id: Arc<Mutex<ConstellationIdentifier>>,
     pub activities: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
-    pub activities_suspended: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    pub activities_suspended:
+        Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
     pub event_queue: Arc<Mutex<EventQueue>>,
 }
 
@@ -70,12 +72,11 @@ pub struct ThreadHelper {
 }
 
 impl ThreadHelper {
-    pub fn new(activities: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-               events: Arc<Mutex<deque::Injector<Box<Event>>>>,) -> ThreadHelper {
-        ThreadHelper {
-            activities,
-            events,
-        }
+    pub fn new(
+        activities: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+        events: Arc<Mutex<deque::Injector<Box<Event>>>>,
+    ) -> ThreadHelper {
+        ThreadHelper { activities, events }
     }
 
     /// Can be called from inside the InnerConstellation to share with
@@ -116,7 +117,7 @@ impl ThreadHelper {
 /// node
 #[derive(Clone)]
 pub struct MultiThreadHelper {
-    pub threads:  Vec<(Arc<Mutex<Box<dyn ConstellationTrait>>>, ExecutorQueues)>,
+    pub threads: Vec<(Arc<Mutex<Box<dyn ConstellationTrait>>>, ExecutorQueues)>,
     time_between_steals: time::Duration,
     debug: bool,
     activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
@@ -133,10 +134,11 @@ impl MultiThreadHelper {
     /// should be shared with the ThreadHelper
     /// * `events_from_threads` - Events passed on from threads, should be shared
     /// with the ThreadHelper
-    pub fn new(debug: bool,
-               activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
-               events_from_threads: Arc<Mutex<deque::Injector<Box<Event>>>>,
-               time_between_steals: u64,
+    pub fn new(
+        debug: bool,
+        activities_from_threads: Arc<Mutex<deque::Injector<Box<dyn ActivityWrapperTrait>>>>,
+        events_from_threads: Arc<Mutex<deque::Injector<Box<Event>>>>,
+        time_between_steals: u64,
     ) -> MultiThreadHelper {
         MultiThreadHelper {
             threads: Vec::new(),
@@ -155,7 +157,11 @@ impl MultiThreadHelper {
     /// activiy and event queues for the specifies thread.
     /// * `constellation` - Reference to the InnerConstellation instance
     /// associated with this thread
-    pub fn push(&mut self, executor_queues: ExecutorQueues, constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>) {
+    pub fn push(
+        &mut self,
+        executor_queues: ExecutorQueues,
+        constellation: Arc<Mutex<Box<dyn ConstellationTrait>>>,
+    ) {
         self.threads.push((constellation, executor_queues));
     }
 
@@ -230,20 +236,20 @@ impl MultiThreadHelper {
 
         let const_id = thread.const_id.clone();
 
-        let activity_wrapper = ActivityWrapper::new(
-            const_id,
-            activity,
-            context,
-            may_be_stolen,
-            expects_events,
-        );
+        let activity_wrapper =
+            ActivityWrapper::new(const_id, activity, context, may_be_stolen, expects_events);
         let aid = activity_wrapper.activity_identifier().clone();
 
         if self.debug {
             info!("Submitting activity with ID: {} to thread: {}", &aid, index);
         }
 
-        self.threads[index].1.activities.lock().unwrap().insert(aid.clone(), activity_wrapper);
+        self.threads[index]
+            .1
+            .activities
+            .lock()
+            .unwrap()
+            .insert(aid.clone(), activity_wrapper);
 
         aid
     }
@@ -268,10 +274,15 @@ impl MultiThreadHelper {
     /// Upon error a ConstellationError is returned
     pub fn done(&mut self) -> Result<bool, ConstellationError> {
         for x in 0..self.threads.len() {
-            if let Ok(res) = self.threads[x].0.lock().expect("Could not get lock on constellation instance").done(){
-                 if !res {
-                     return Ok(false);
-                 }
+            if let Ok(res) = self.threads[x]
+                .0
+                .lock()
+                .expect("Could not get lock on constellation instance")
+                .done()
+            {
+                if !res {
+                    return Ok(false);
+                }
             } else {
                 warn!("Got Error when shutting down thread: {}", x);
                 return Err(ConstellationError);
@@ -291,7 +302,8 @@ impl MultiThreadHelper {
         let mut index = 0;
 
         for i in 0..self.threads.len() {
-            let length = self.threads[i].1.activities.lock().unwrap().len() + self.threads[i].1.activities_suspended.lock().unwrap().len();
+            let length = self.threads[i].1.activities.lock().unwrap().len()
+                + self.threads[i].1.activities_suspended.lock().unwrap().len();
             if length < shortest as usize {
                 index = i;
                 shortest = length as u64;
@@ -308,10 +320,25 @@ impl MultiThreadHelper {
         let key = event.get_dst();
 
         for i in 0..self.threads.len() {
-            if self.threads[i].1.activities.lock().unwrap().contains_key(&key) ||
-                self.threads[i].1.activities_suspended.lock().unwrap().contains_key(&key) {
-
-                self.threads[i].1.event_queue.lock().unwrap().insert(key, event);
+            if self.threads[i]
+                .1
+                .activities
+                .lock()
+                .unwrap()
+                .contains_key(&key)
+                || self.threads[i]
+                    .1
+                    .activities_suspended
+                    .lock()
+                    .unwrap()
+                    .contains_key(&key)
+            {
+                self.threads[i]
+                    .1
+                    .event_queue
+                    .lock()
+                    .unwrap()
+                    .insert(key, event);
                 return;
             }
         }
@@ -320,7 +347,10 @@ impl MultiThreadHelper {
         // queue until we find a matching activity. This should in essence only
         // be possible when an event has an invalid destination, or is retrieved
         // from another node, without the matching activity
-        self.local_events.lock().unwrap().insert(event.get_dst(), event);
+        self.local_events
+            .lock()
+            .unwrap()
+            .insert(event.get_dst(), event);
     }
 
     /// Handles all events from threads by looping through the
@@ -332,14 +362,13 @@ impl MultiThreadHelper {
             match event {
                 Steal::Success(e) => {
                     self.distribute_event(e);
-                },
+                }
                 _ => {
                     return;
                 }
             }
         }
     }
-
 
     /// Insert an activity to the thread which has the least work
     ///
@@ -350,9 +379,13 @@ impl MultiThreadHelper {
 
         let aid = activity_trait.activity_identifier();
 
-        self.threads[index].1.activities.lock().unwrap().insert(aid.clone(), activity_trait);
+        self.threads[index]
+            .1
+            .activities
+            .lock()
+            .unwrap()
+            .insert(aid.clone(), activity_trait);
     }
-
 
     /// Goes through all local events and checks if any thread has the target
     /// activity.
@@ -365,9 +398,7 @@ impl MultiThreadHelper {
 
         let mut key = None;
 
-        let mut it = guard.keys().take(1).map(|x|
-            key = Some(x.clone())
-        );
+        let mut it = guard.keys().take(1).map(|x| key = Some(x.clone()));
         it.next();
 
         if !key.is_some() {
@@ -382,7 +413,6 @@ impl MultiThreadHelper {
         self.distribute_event(event);
     }
 
-
     /// Handle activities from threads, checks the
     /// `self.activities_from_threads` to find these activities, this struct
     /// should be shared with ALL threads through the ThreadHelper struct.
@@ -393,7 +423,7 @@ impl MultiThreadHelper {
             match activity {
                 Steal::Success(activity) => {
                     self.distribute_activity(activity);
-                },
+                }
                 _ => {
                     return;
                 }
@@ -404,7 +434,7 @@ impl MultiThreadHelper {
             match event {
                 Steal::Success(e) => {
                     self.distribute_event(e);
-                },
+                }
                 _ => {
                     return;
                 }

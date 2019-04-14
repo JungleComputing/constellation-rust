@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-
 /// Single event collector is an activity which only waits for one event. The
 /// struct field event will be sent with this event upon receive.
 ///

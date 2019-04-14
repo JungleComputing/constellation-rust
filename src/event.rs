@@ -2,7 +2,6 @@
 ///! Payload to carry the data, which can be user implemented as long as it
 ///! extends the `PayloadTrait`. Events also carry information about the sending
 ///! and receiving activities.
-
 use super::payload::PayloadTrait;
 use crate::activity_identifier::ActivityIdentifier;
 use std::fmt;

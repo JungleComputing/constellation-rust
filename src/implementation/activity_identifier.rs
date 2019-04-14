@@ -38,7 +38,6 @@ impl fmt::Display for ActivityIdentifier {
 }
 
 impl ActivityIdentifier {
-
     /// Generate a new ActivityIdentifier, this method should only be called
     /// internally from the ActivityWrapper. NEVER generate an
     /// ActivityIdentifier in the application.

@@ -6,18 +6,22 @@
 ///! The actual thread logic and work distribution is taken care of with the
 ///! thread_handler struct, this class only initializes everything and redirects
 ///! user called functions to the correct place in the handler
-
 use super::super::mpi::environment::Universe;
-use crate::{ConstellationError, ConstellationConfiguration, ConstellationTrait, ActivityTrait, Context, ActivityIdentifier, Event};
-use crate::implementation::constellation_files::thread_helper::{MultiThreadHelper, ThreadHelper, ExecutorQueues};
-use crate::implementation::constellation_files::inner_constellation::InnerConstellation;
 use crate::implementation::communication::mpi_info;
+use crate::implementation::constellation_files::inner_constellation::InnerConstellation;
+use crate::implementation::constellation_files::thread_helper::{
+    ExecutorQueues, MultiThreadHelper, ThreadHelper,
+};
 use crate::implementation::constellation_identifier::ConstellationIdentifier;
+use crate::{
+    ActivityIdentifier, ActivityTrait, ConstellationConfiguration, ConstellationError,
+    ConstellationTrait, Context, Event,
+};
 
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crossbeam::{Sender, Receiver, unbounded, deque};
+use crossbeam::{deque, unbounded, Receiver, Sender};
 use std::time;
 
 /// Contains all the wrapper information necessary for the user to communicate
@@ -66,34 +70,46 @@ impl ConstellationTrait for MultiThreadedConstellation {
             }
 
             // Queues used for threads to share events/activities with thread handler
-            let activities_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
-            let events_from_threads= Arc::new(Mutex::new(deque::Injector::new()));
+            let activities_from_threads = Arc::new(Mutex::new(deque::Injector::new()));
+            let events_from_threads = Arc::new(Mutex::new(deque::Injector::new()));
 
-            let mut thread_handler = MultiThreadHelper::new(self.debug, activities_from_threads.clone(), events_from_threads.clone(), self.config.time_between_steals);
+            let mut thread_handler = MultiThreadHelper::new(
+                self.debug,
+                activities_from_threads.clone(),
+                events_from_threads.clone(),
+                self.config.time_between_steals,
+            );
 
             for i in 0..self.thread_count {
-                let executor_queues = ExecutorQueues::new(Arc::new(Mutex::new(ConstellationIdentifier::new(&self.universe, self.const_id.activity_counter.clone(), i))));
+                let executor_queues =
+                    ExecutorQueues::new(Arc::new(Mutex::new(ConstellationIdentifier::new(
+                        &self.universe,
+                        self.const_id.activity_counter.clone(),
+                        i,
+                    ))));
 
                 // This struct links the activities and events passed through the functions "submit" and "send" to the thread_handler
-                let helper = ThreadHelper::new(activities_from_threads.clone(), events_from_threads.clone());
+                let helper =
+                    ThreadHelper::new(activities_from_threads.clone(), events_from_threads.clone());
 
-                let inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>> = Arc::new(Mutex::new(Box::new(InnerConstellation::new_multithreaded(
-                    &self.config,
-                    executor_queues.const_id.clone(),
-                    helper,
-                    executor_queues.activities.clone(),
-                    executor_queues.activities_suspended.clone(),
-                    executor_queues.event_queue.clone(),
-                    i,
-                ))));
+                let inner_constellation: Arc<Mutex<Box<dyn ConstellationTrait>>> =
+                    Arc::new(Mutex::new(Box::new(InnerConstellation::new_multithreaded(
+                        &self.config,
+                        executor_queues.const_id.clone(),
+                        helper,
+                        executor_queues.activities.clone(),
+                        executor_queues.activities_suspended.clone(),
+                        executor_queues.event_queue.clone(),
+                        i,
+                    ))));
 
                 if let Some(inner) = inner_constellation
                     .lock()
                     .unwrap()
-                    .downcast_mut::<InnerConstellation>() {
+                    .downcast_mut::<InnerConstellation>()
+                {
                     inner.activate_inner(inner_constellation.clone());
                 }
-
 
                 thread_handler.push(executor_queues, inner_constellation.clone());
             }
@@ -101,9 +117,7 @@ impl ConstellationTrait for MultiThreadedConstellation {
             let (s, r): (Sender<bool>, Receiver<bool>) = unbounded();
             let (s2, r2): (Sender<bool>, Receiver<bool>) = unbounded();
 
-
             let mut inner_handler = thread_handler.clone();
-
 
             // Start multi-thread handler, this function will periodically
             // check for new activities/events, try to steal events from other nodes
@@ -145,7 +159,12 @@ impl ConstellationTrait for MultiThreadedConstellation {
         may_be_stolen: bool,
         expects_events: bool,
     ) -> ActivityIdentifier {
-        self.thread_handler.as_mut().unwrap().submit(activity, context, may_be_stolen, expects_events)
+        self.thread_handler.as_mut().unwrap().submit(
+            activity,
+            context,
+            may_be_stolen,
+            expects_events,
+        )
     }
 
     /// Perform a send operation with the event specified as argument
@@ -177,13 +196,24 @@ impl ConstellationTrait for MultiThreadedConstellation {
             // All threads were shutdown ok
             if *inner.as_ref().unwrap() {
                 // Shut down thread_handler
-                self.signal_thread_handler.as_ref().unwrap().0.send(true).expect("Failed to send signal to load balancer");
+                self.signal_thread_handler
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .send(true)
+                    .expect("Failed to send signal to load balancer");
 
                 let time = time::Duration::from_secs(100);
                 if self.debug {
                     info!("Waiting for {}s for load balancer to shut down", 100);
                 }
-                if let Ok(r) = self.signal_thread_handler.as_ref().unwrap().1.recv_timeout(time) {
+                if let Ok(r) = self
+                    .signal_thread_handler
+                    .as_ref()
+                    .unwrap()
+                    .1
+                    .recv_timeout(time)
+                {
                     if !r {
                         warn!("Something went wrong shutting down the load balancer");
                         return Err(ConstellationError);
@@ -227,7 +257,7 @@ impl MultiThreadedConstellation {
             universe,
             debug: config.debug,
             thread_count: config.number_of_threads,
-            config
+            config,
         }
     }
 }

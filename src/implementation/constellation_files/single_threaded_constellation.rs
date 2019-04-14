@@ -2,12 +2,14 @@
 extern crate crossbeam;
 extern crate mpi;
 
-use mpi::environment::Universe;
 use super::inner_constellation::InnerConstellation;
-use crate::{ConstellationError, ActivityIdentifier, ConstellationTrait, ActivityTrait, Context, Event, ConstellationConfiguration};
 use crate::implementation::communication::mpi_info;
 use crate::implementation::constellation_identifier::ConstellationIdentifier;
-
+use crate::{
+    ActivityIdentifier, ActivityTrait, ConstellationConfiguration, ConstellationError,
+    ConstellationTrait, Context, Event,
+};
+use mpi::environment::Universe;
 
 use std::sync::{Arc, Mutex};
 
@@ -163,7 +165,12 @@ impl SingleThreadConstellation {
         let universe = mpi::initialize().unwrap();
 
         SingleThreadConstellation {
-            inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(&config, &universe, Arc::new(Mutex::new(0)), 0)))),
+            inner_constellation: Arc::new(Mutex::new(Box::new(InnerConstellation::new(
+                &config,
+                &universe,
+                Arc::new(Mutex::new(0)),
+                0,
+            )))),
             universe,
             debug: config.debug,
         }

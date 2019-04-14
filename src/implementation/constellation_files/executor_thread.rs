@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::time;
 
 use super::super::activity_wrapper::ActivityWrapperTrait;
-use crate::{activity, ConstellationTrait, Event};
 use crate::activity_identifier::ActivityIdentifier;
 use crate::implementation::event_queue::EventQueue;
+use crate::{activity, ConstellationTrait, Event};
 
 use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
@@ -76,7 +76,7 @@ impl ExecutorThread {
             constellation,
             receiver,
             sender,
-            thread_id
+            thread_id,
         }
     }
 
@@ -94,12 +94,10 @@ impl ExecutorThread {
             return None;
         }
 
-        let mut key= None;
+        let mut key = None;
         let mut activity: Option<Box<dyn ActivityWrapperTrait>> = None;
 
-        let mut it = guard.keys().take(1).map(|x|
-            key = Some(x.clone())
-        );
+        let mut it = guard.keys().take(1).map(|x| key = Some(x.clone()));
         it.next();
 
         if key.is_some() {
@@ -188,7 +186,13 @@ impl ExecutorThread {
     }
 
     fn check_suspended_work(&mut self) {
-        let keys: Vec<ActivityIdentifier> = self.work_suspended.lock().unwrap().keys().map(|x| x.clone()).collect();
+        let keys: Vec<ActivityIdentifier> = self
+            .work_suspended
+            .lock()
+            .unwrap()
+            .keys()
+            .map(|x| x.clone())
+            .collect();
         for key in keys {
             let event = self.event_queue.lock().unwrap().remove(key.clone());
 

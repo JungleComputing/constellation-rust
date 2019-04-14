@@ -1,9 +1,8 @@
-use std::fmt;
-use std::sync::{Arc, Mutex};
-use crate::{ActivityTrait, ActivityIdentifier, ConstellationTrait, Context, Event};
 use crate::activity::State;
 use crate::implementation::constellation_identifier::ConstellationIdentifier;
-
+use crate::{ActivityIdentifier, ActivityTrait, ConstellationTrait, Context, Event};
+use std::fmt;
+use std::sync::{Arc, Mutex};
 
 pub trait ActivityWrapperTrait: Sync + Send + ActivityTrait + fmt::Display + mopa::Any {
     fn activity_identifier(&self) -> &ActivityIdentifier;
@@ -115,7 +114,7 @@ impl ActivityWrapper {
         may_be_stolen: bool,
         expects_events: bool,
     ) -> Box<ActivityWrapper> {
-       Box::from(ActivityWrapper {
+        Box::from(ActivityWrapper {
             id: ActivityIdentifier::new(const_id),
             context: (*context).clone(),
             may_be_stolen,

@@ -15,7 +15,6 @@
 ///! See util/activities/ for various pre-made activities which may come in handy
 ///! See examples/ for some examples of what self-made activities may
 ///! look like.
-
 use super::activity_identifier::ActivityIdentifier;
 use super::constellation::ConstellationTrait;
 use super::event::Event;

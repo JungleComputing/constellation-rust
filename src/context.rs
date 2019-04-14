@@ -3,7 +3,6 @@
 ///! When setting up constellation all nodes/threads receive a vector of
 ///! contexts, they will then only execute activities that has one ore more
 ///! matching contexts.
-
 use std::fmt;
 
 /// Holds any number of context, use to identify on which executor

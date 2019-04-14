@@ -2,8 +2,7 @@
 ///! makes sure there can be multiple events sent to the same destination,
 ///! by extending the ordinary HashMap (from hashbrown) to hold a vector of
 ///! Events as value.
-
-use crate::{Event, ActivityIdentifier};
+use crate::{ActivityIdentifier, Event};
 
 use hashbrown::hash_map::Keys;
 use hashbrown::HashMap;
@@ -25,13 +24,13 @@ impl EventQueue {
         }
     }
 
-    pub fn insert(&mut self, key: ActivityIdentifier, event: Box<Event>){
+    pub fn insert(&mut self, key: ActivityIdentifier, event: Box<Event>) {
         self.data.entry(key).or_insert_with(Vec::new).push(event);
     }
 
     /// If there are multiple events, only one is returned. When the last one
     /// is returned, the entry is removed.
-    pub fn remove(&mut self, key: ActivityIdentifier) -> Option<Box<Event>>{
+    pub fn remove(&mut self, key: ActivityIdentifier) -> Option<Box<Event>> {
         let mut event: Option<Box<Event>> = None;
         self.data.entry(key.clone()).and_modify(|e| event = e.pop());
 
@@ -43,7 +42,7 @@ impl EventQueue {
         event
     }
 
-    pub fn contains_key(&mut self, key: &ActivityIdentifier) -> bool{
+    pub fn contains_key(&mut self, key: &ActivityIdentifier) -> bool {
         self.data.contains_key(key)
     }
 

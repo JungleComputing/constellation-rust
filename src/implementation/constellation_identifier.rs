@@ -1,13 +1,12 @@
 ///! An identifier for each thread running in constellation. It holds
 ///! information about all nodes and threads, as well as helps with generating
 ///! unique IDs for all newly submitted activities.
-
 use mpi::environment::Universe;
 use mpi::topology::{Communicator, Rank};
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 
 use crate::implementation::communication::node_handler;
 
@@ -52,7 +51,11 @@ impl ConstellationIdentifier {
     /// # Returns
     /// * `ConstellationIdentifier` - Unique ConstellationIdentifier
     /// for each thread on each node
-    pub fn new(universe: &Universe, activity_counter: Arc<Mutex<u64>>, thread_id: i32) -> ConstellationIdentifier {
+    pub fn new(
+        universe: &Universe,
+        activity_counter: Arc<Mutex<u64>>,
+        thread_id: i32,
+    ) -> ConstellationIdentifier {
         let world = universe.world();
         let rank = world.rank();
 
@@ -75,7 +78,6 @@ impl ConstellationIdentifier {
 
         const_id
     }
-
 
     /// Create a new empty ConstellationIdentifier.
     /// This one still needs to get node_info and group set.
