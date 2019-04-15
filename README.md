@@ -1,5 +1,7 @@
-# constellation-rust
+# constellation-rust [WIP]
 Implementation of Constellation in Rust
+
+JAVA implementation can be found here: [Constellation](https://github.com/NLeSC/Constellation)
 
 ## File Structure
 All files located in `src/` are part of the API.
@@ -48,11 +50,10 @@ Compile with `cargo build` and execute with slurm with `sbatch mpi_run /path/to/
 ---
 
 ## TODO
-- Implement multithreaded base version.
-- Go through all mod.rs/lib.r and make all files private, which are not included in the API. (currently pretty much everyting is public)
+- Improve thread_handler to minimize locking of thread data structures
 - Steal strategies
 - Steal pools
-- Add functionality to specify max size of work_queues on each executor thread
+- Add functionality to specify max size of work_queues on each executor thread (currently each thread has unlimited queues and the thread handler tries to load balance it)
 - Enhance ConstellationError functionality and insert appropriate error messages where returned
 - Simplify API as much as possible, while maintaining expressivness
 - Publish on crates, add links to documentation and crate on this github page
