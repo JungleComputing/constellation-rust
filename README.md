@@ -19,7 +19,7 @@ See `installation-guide-das5.org` for a guide on how to install everything neces
 * Clang 7.0.1
 
 ## Examples
-See the directory `examples/` for various example implementations. To execute an example implementation run e.g. `cargo run --example vector_add 1 4 125000`, this will run on 1 node using 4 threads. To run distributed using MPI after compilation, in order to e.g. specify mpi flags, run: `mpirun MPI_ARGS path_to_executable ARGS"`.
+See the directory `examples/` for various example implementations. To execute an example implementation run e.g. `cargo run --example vector_add 4 125000`, this will run on 1 node using 4 threads. To run distributed using MPI after compilation, in order to e.g. specify mpi flags, run: `mpirun MPI_ARGS path_to_executable ARGS"`.
 
 ## Run on DAS-5 with slurm
 
