@@ -136,25 +136,20 @@ fn run(mut constellation: Box<dyn ConstellationTrait>, array_length: i32) {
 fn main() {
     // Retrieve user arguments
     let args: Vec<String> = env::args().collect();
-    if args.len() < 4 {
+    if args.len() < 3 {
         println!(
             "Please provide an number of nodes and array length\n\
-             mpirun ARGS vector_add <nmr_nodes> <nmr_threads> <array_length>"
+             mpirun ARGS vector_add <nmr_threads> <array_length>"
         );
         exit(1);
     }
 
-    let nmr_nodes = args[1].parse().expect(&format!(
+    let nmr_threads = args[1].parse().expect(&format!(
         "Cannot parse {} into an integer, please provide number of nodes",
         args[1]
     ));
 
-    let nmr_threads = args[2].parse().expect(&format!(
-        "Cannot parse {} into an integer, please provide number of nodes",
-        args[1]
-    ));
-
-    let array_length = args[3].parse().expect(&format!(
+    let array_length = args[2].parse().expect(&format!(
         "Cannot parse {} into an integer, please provide a valid array length",
         args[2]
     ));
@@ -167,7 +162,7 @@ fn main() {
     let const_config = constellation_config::ConstellationConfiguration::new(
         StealStrategy::BIGGEST,
         StealStrategy::BIGGEST,
-        nmr_nodes,
+        1,
         nmr_threads,
         true,
         context_vec,

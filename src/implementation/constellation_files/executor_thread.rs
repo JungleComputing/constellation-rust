@@ -1,7 +1,6 @@
 extern crate crossbeam;
 
 use std::sync::{Arc, Mutex};
-use std::time;
 
 use super::super::activity_wrapper::ActivityWrapperTrait;
 use crate::activity_identifier::ActivityIdentifier;
@@ -10,10 +9,6 @@ use crate::{activity, ConstellationTrait, Event};
 
 use crossbeam::{Receiver, Sender};
 use hashbrown::HashMap;
-
-// Timeout for trying to steal events from parent before checking suspended
-// queues
-const TIMEOUT_SIGNAL: u64 = 10;
 
 /// The executor thread runs in asynchronously and is in charge of executing
 /// activities. It will periodically check for work/events in the Constellation
@@ -212,9 +207,6 @@ impl ExecutorThread {
     /// This will startup the thread, periodically check for work forever or
     /// if shut down from parent Constellation.
     pub fn run(&mut self) {
-        // Wait for signal for 10 microseconds before proceeding
-        let timeout = time::Duration::from_micros(TIMEOUT_SIGNAL);
-
         loop {
             // Check if we have received event for work
             if !self.work_suspended.lock().unwrap().is_empty() {
@@ -229,7 +221,7 @@ impl ExecutorThread {
             }
 
             // Check for signal to shut down
-            if let Ok(val) = self.receiver.recv_timeout(timeout) {
+            if let Ok(_) = self.receiver.try_recv().map(|val| {
                 if val {
                     info!("Got signal to shutdown");
 
@@ -247,7 +239,7 @@ impl ExecutorThread {
                         );
                     }
                 }
-            }
+            }){};
         }
     }
 }

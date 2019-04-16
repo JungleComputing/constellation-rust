@@ -1,6 +1,3 @@
-use crate::implementation::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
-use crate::implementation::constellation_identifier::ConstellationIdentifier;
-use crate::implementation::event_queue::EventQueue;
 ///! Module for handling:
 ///! - Thread synchronization
 ///! - Load balancing
@@ -16,6 +13,10 @@ use crate::implementation::event_queue::EventQueue;
 ///! The `run` method should be started with a new thread, ìt will periodically
 ///! check threads for suspended activities and events to distribute evenly
 ///! across all threads.
+
+use crate::implementation::activity_wrapper::{ActivityWrapper, ActivityWrapperTrait};
+use crate::implementation::constellation_identifier::ConstellationIdentifier;
+use crate::implementation::event_queue::EventQueue;
 use crate::{
     ActivityIdentifier, ActivityTrait, ConstellationError, ConstellationTrait, Context, Event,
 };
@@ -26,10 +27,6 @@ use std::time;
 
 use crossbeam::{deque, deque::Steal, Receiver, Sender};
 use hashbrown::HashMap;
-
-// Specifies how long to wait between stealing activities or events
-// from threads for load balancing purposes.
-const TIMEOUT: u64 = 10;
 
 /// Struct holding all queues related to one single thread.
 ///
@@ -44,7 +41,7 @@ pub struct ExecutorQueues {
     pub const_id: Arc<Mutex<ConstellationIdentifier>>,
     pub activities: Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
     pub activities_suspended:
-        Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
+    Arc<Mutex<HashMap<ActivityIdentifier, Box<dyn ActivityWrapperTrait>>>>,
     pub event_queue: Arc<Mutex<EventQueue>>,
 }
 
@@ -176,8 +173,6 @@ impl MultiThreadHelper {
     /// * `receiver` - The receiving channel for this thread
     /// * `sender` - The sending channel for this thread
     pub fn run(&mut self, receiver: Receiver<bool>, sender: Sender<bool>) {
-        let timeout = time::Duration::from_micros(TIMEOUT);
-
         loop {
             // Check for events from threads
             if !self.events_from_threads.lock().unwrap().is_empty() {
@@ -190,7 +185,7 @@ impl MultiThreadHelper {
             }
 
             // Check for signal to shut down
-            if let Ok(val) = receiver.recv_timeout(timeout) {
+            if let Ok(_) = receiver.try_recv().map(|val| {
                 if val {
                     // Signal that we are shutting down
                     sender.send(true).expect(
@@ -199,7 +194,7 @@ impl MultiThreadHelper {
                     );
                     return; // Shutdown thread
                 }
-            }
+            }) {};
 
             // Sleep for the given time
             thread::sleep(self.time_between_steals);
@@ -418,7 +413,7 @@ impl MultiThreadHelper {
     /// should be shared with ALL threads through the ThreadHelper struct.
     fn handle_thread_activity(&mut self) {
         loop {
-            // Load balance activites
+            // Load balance activities
             let activity = self.activities_from_threads.lock().unwrap().steal();
             match activity {
                 Steal::Success(activity) => {

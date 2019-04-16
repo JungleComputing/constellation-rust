@@ -2,7 +2,6 @@
 
 extern crate constellation_rust;
 
-use std::env;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -145,14 +144,6 @@ fn run(mut constellation: Box<dyn ConstellationTrait>) {
 /// NOTE, does not actually utilize distributed Constellation atm, but runs a
 /// single threaded instance
 fn main() {
-    // Retrieve user arguments
-    let args: Vec<String> = env::args().collect();
-
-    let nmr_nodes = args[1].parse().expect(&format!(
-        "Cannot parse {} into an integer, please provide number of nodes",
-        args[1]
-    ));
-
     let mut context_vec = ContextVec::new();
     context_vec.append(&Context {
         label: String::from(CONTEXT_LABEL),
@@ -161,7 +152,7 @@ fn main() {
     let const_config = constellation_config::ConstellationConfiguration::new_single_threaded(
         StealStrategy::BIGGEST,
         StealStrategy::BIGGEST,
-        nmr_nodes,
+        1,
         true,
         context_vec,
         TIME_BETWEEN_STEALS,

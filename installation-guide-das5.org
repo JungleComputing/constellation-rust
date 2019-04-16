@@ -1,0 +1,109 @@
+#+title: Installing the Rust Constellation on the DAS-5
+
+* Introduction
+
+This document describes how to install Rust on the DAS-5.  It requires
+a CMake newer than version 3.4.3, while the DAS-5 has version 2.8.12.
+For this document, we assume we have a CMake that is new enough.
+
+* Necessary modules
+
+In ~$HOME/.bashrc~ load the following modules:
+
+#+begin_src sh
+module load gcc/6.4.0
+module load openmpi/gcc/64/1.10.3
+#+end_src
+
+Log in and out to load a new shell.
+
+* Installing Rust
+
+Installing Rust can be done with:
+
+#+begin_src sh
+cd /var/scratch/$USER/applications
+curl https://sh.rustup.rs > rustup.sh
+sh rustup.sh
+#+end_src
+
+We continue with the default installation that modifies/introduces the
+following files/directories:
+
+- $HOME/.cargo/bin
+- $HOME/.profile
+- $HOME/.bash_profile
+
+* Installing Clang and LLVM 7.0.1
+
+Unpack Clang and LLVM:
+
+#+begin_src sh
+cd /var/scratch/$USER/applications
+wget http://releases.llvm.org/7.0.1/llvm-7.0.1.src.tar.xz
+wget http://releases.llvm.org/7.0.1/cfe-7.0.1.src.tar.xz
+tar xvf llvm-7.0.1.src.tar.xz
+tar xvf cfe-7.0.1.src.tar.xz
+#+end_src
+
+Move the Clang source to the LLVM directory:
+
+#+begin_src sh
+mv cfe-7.0.1.src llvm-7.0.1.src/tools/clang
+#+end_src
+
+Build everything:
+
+#+begin_src sh
+mkdir llvm-7.0.1.build
+cd llvm-7.0.1.build
+cmake -DCMAKE_INSTALL_PREFIX=/var/scratch/$USER/applicatons/llvm-7.0.1 \
+      ../llvm-7.0.1.src
+screen
+cmake --build .
+cmake --build . --target install
+#+end_src
+
+Add Clang to the path in ~$HOME/.bashrc~
+
+#+begin_src sh
+export PATH=/var/scatch/$USER/applications/llvm-7.0.1/bin:$PATH
+#+end_src
+
+* Compiling constellation-rust
+
+In the Rust Constellation directory run:
+
+#+begin_src sh
+cargo build --example vector_add
+#+end_src
+
+* Running it on the DAS-5
+
+Use the following script in the root directory:
+
+#+begin_src sh
+#!/bin/bash
+#SBATCH --time=00:15:00
+#SBATCH -N 1
+# The number of threads per node should ALWAYS be 1.
+# Constellation will deal with multithreading depending
+# on how many threads are provided as argument.
+#SBATCH --ntasks-per-node=1
+
+. /etc/bashrc
+. /etc/profile.d/modules.sh
+module load openmpi/gcc/64
+
+APP=$1
+ARGS="$2"
+OMPI_OPTS="--mca btl ^usnic"
+
+$MPI_RUN $OMPI_OPTS $APP $AR
+#+end_src
+
+Then launch vector_add with the following command:
+
+#+begin_src sh
+sbatch ./mpi_run target/debug/examples/vector_add "4 100000"
+#+end_src

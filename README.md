@@ -6,6 +6,8 @@ All files located in `src/` are part of the API.
 
 For useful files such as pre-made activities, see the directory `src/util/`.
 
+See `installation-guide-das5.org` for a guide on how to install everything necessary and executing an example application.
+
 **Links:**
 
 ## Dependencies
@@ -24,7 +26,7 @@ Create a slurm script similar to this one:
 $ cat $(which mpi_run)
 #!/bin/bash
 #SBATCH --time=00:15:00
-#SBATCH -N 2
+#SBATCH -N 1
 # The number of threads per node should ALWAYS be 1.
 # Constellation will deal with multithreading depending
 # on how many threads are provided as argument.
@@ -40,11 +42,13 @@ OMPI_OPTS="--mca btl ^usnic"
 
 $MPI_RUN $OMPI_OPTS $APP $AR
 ```
-Compile with `cargo build` and execute with slurm with `sbatch mpi_run /path/to/target/vector_add "<nmr_nodes> <nmr_threads> <vector_lengt>"`. 
+Compile with `cargo build` and execute with slurm with `sbatch mpi_run /path/to/target/vector_add "<nmr_threads> <vector_lengt>"`. 
+
+**Notes**
 
 * Note that the arguments for vector_add are between quotation marks. 
 * The binary will be located in `target/debug/` when building in development (`cargo build --example vector_add`).
-
+* Constellation is not yet implemented for multiple nodes
 ---
 
 ## TODO
@@ -56,3 +60,8 @@ Compile with `cargo build` and execute with slurm with `sbatch mpi_run /path/to/
 - Enhance ConstellationError functionality and insert appropriate error messages where returned
 - Simplify API as much as possible, while maintaining expressivness
 - Publish on crates, add links to documentation and crate on this github page
+
+##### Possible improvements to increase speedup of multithreading 
+- Some elements can perhaps be removed from structs which are copied/passed around a lot with every activity/event (such as identifiers).
+- Minimizing methods/variables that are inside the shared structures wrapped in mutexes, to avoid dead-waiting.
+- Figuring out a better way for the multi-thread handler to distribute work. Currently, it can be a bottle-neck if a huge amount of activities are submitted in a short time. It currently locks the thread work queues to insert any newly added activity, also it locks them to check the length.
