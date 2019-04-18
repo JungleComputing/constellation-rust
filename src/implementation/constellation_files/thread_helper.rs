@@ -184,6 +184,9 @@ impl MultiThreadHelper {
                 self.handle_thread_activity();
             }
 
+            // Check local events
+            self.handle_local_events();
+
             // Check for signal to shut down
             if let Ok(_) = receiver.try_recv().map(|val| {
                 if val {
@@ -315,19 +318,19 @@ impl MultiThreadHelper {
         let key = event.get_dst();
 
         for i in 0..self.threads.len() {
-            if self.threads[i]
+            let c1 = self.threads[i]
                 .1
                 .activities
                 .lock()
                 .unwrap()
-                .contains_key(&key)
-                || self.threads[i]
-                    .1
-                    .activities_suspended
-                    .lock()
-                    .unwrap()
-                    .contains_key(&key)
-            {
+                .contains_key(&key);
+            let c2 = self.threads[i]
+                .1
+                .activities_suspended
+                .lock()
+                .unwrap()
+                .contains_key(&key);
+            if c1 || c2 {
                 self.threads[i]
                     .1
                     .event_queue
@@ -412,31 +415,22 @@ impl MultiThreadHelper {
     /// `self.activities_from_threads` to find these activities, this struct
     /// should be shared with ALL threads through the ThreadHelper struct.
     fn handle_thread_activity(&mut self) {
-        loop {
-            // Load balance activities
-            let activity = self.activities_from_threads.lock().unwrap().steal();
-            match activity {
-                Steal::Success(activity) => {
-                    self.distribute_activity(activity);
-                }
-                _ => {
-                    return;
-                }
+        // Load balance activities
+        let activity = self.activities_from_threads.lock().unwrap().steal();
+        match activity {
+            Steal::Success(activity) => {
+                self.distribute_activity(activity);
             }
+            _ => {}
+        }
 
-            // Make sure event goes to correct thread
-            let event = self.events_from_threads.lock().unwrap().steal();
-            match event {
-                Steal::Success(e) => {
-                    self.distribute_event(e);
-                }
-                _ => {
-                    return;
-                }
+        // Make sure event goes to correct thread
+        let event = self.events_from_threads.lock().unwrap().steal();
+        match event {
+            Steal::Success(e) => {
+                self.distribute_event(e);
             }
-
-            // Check local events
-            self.handle_local_events();
+            _ => {}
         }
     }
 }
