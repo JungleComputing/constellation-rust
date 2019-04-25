@@ -17,10 +17,12 @@ overflow-checks = true
 [profile.release]
 
 [dependencies]
-mpi = "0.5"
+mpi = "0.5.3"
 crossbeam = "0.7.1"
 mopa = "0.2.2"
 objekt = "0.1.2"
 hashbrown = "0.1"
 log = "0.4.6"
 simple_logger = "1.0.1"
+bindgen = "0.31.3"
+libffi-sys = "0.6.3"
